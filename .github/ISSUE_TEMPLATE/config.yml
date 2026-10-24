@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions, ideas and licensing
+    url: https://github.com/thomholden/StrataZip/discussions
+    about: Ask in Discussions. Issues are for bugs.
+  - name: Security problems
+    url: https://github.com/thomholden/StrataZip/security/advisories/new
+    about: Please report vulnerabilities privately.

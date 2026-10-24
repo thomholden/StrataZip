@@ -1,0 +1,33 @@
+name: Bug report
+description: StrataZip did something wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. Please do not attach data you are not allowed to share.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `stratazip --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The exact command, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: selftest
+    attributes:
+      label: Does `stratazip --test` pass?
+      options: ["Yes", "No", "Did not try"]
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Distribution and processor, e.g. Kubuntu 24.04, Ryzen 5 3600.

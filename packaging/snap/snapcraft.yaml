@@ -1,0 +1,29 @@
+# Untested first draft. Build with: snapcraft (from the repository root, after copying
+# this file to snap/snapcraft.yaml), or let Launchpad build it from the repository.
+name: stratazip
+base: core24
+version: '1.0.0'
+summary: Maximum-ratio file and directory archiver
+description: |
+  StrataZip compresses files and directory trees to the smallest size it can, choosing
+  a coder for every block by trial: LZ, context mixing, DNA and 16-bit audio. Every
+  block is CRC-checked and every file SHA-256-checked on the way out, and optional
+  recovery records can repair a damaged archive.
+license: AGPL-3.0-only
+grade: stable
+confinement: strict
+platforms:
+  amd64:
+
+apps:
+  stratazip:
+    command: usr/bin/stratazip
+    plugs: [home, removable-media]
+
+parts:
+  stratazip:
+    plugin: cmake
+    source: .
+    cmake-parameters: [-DCMAKE_BUILD_TYPE=Release, -DCMAKE_INSTALL_PREFIX=/usr]
+    build-packages: [qt6-base-dev, g++]
+    stage-packages: [libqt6core6t64, libqt6concurrent6t64]

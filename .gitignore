@@ -1,0 +1,9 @@
+/build/
+/build-*/
+/bench/silesia/
+/bench/results.txt
+*.stz
+*.o
+CMakeLists.txt.user
+.vscode/
+.idea/

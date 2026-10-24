@@ -31,9 +31,31 @@ jobs:
             build/*.deb
             build/*.tar.gz
 
+  install-test:
+    # The .deb must install and run on every supported release, not only the one it was
+    # built on.
+    needs: linux
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'ubuntu:26.04']
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-linux-x86_64
+      - name: Install the package and run it
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./stratazip_*_amd64.deb
+          stratazip --version
+          head -c 1000000 /dev/urandom > r && stratazip -c r r.stz && stratazip -d r.stz r2 && cmp r r2
+          echo "installs and round-trips on ${{ matrix.image }}"
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: linux
+    needs: [linux, install-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

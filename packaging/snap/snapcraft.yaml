@@ -2,7 +2,7 @@
 # this file to snap/snapcraft.yaml), or let Launchpad build it from the repository.
 name: stratazip
 base: core24
-version: '1.0.0'
+version: '1.0.1'
 summary: Maximum-ratio file and directory archiver
 description: |
   StrataZip compresses files and directory trees to the smallest size it can, choosing

@@ -4,7 +4,17 @@ All notable changes to StrataZip are recorded here. Versions follow
 [semantic versioning](https://semver.org); the archive format has its own number, and
 every format StrataZip has written stays readable by every later release.
 
-## 1.0.0 (unreleased)
+## 1.0.1 (2026-10-24)
+
+- The `.deb` now installs on Ubuntu 26.04 as well as 24.04. Its Qt dependencies are
+  declared by hand with both package names (`libqt6concurrent6t64 | libqt6concurrent6`),
+  where 1.0.0 demanded the 24.04 name only.
+- CI installs the built `.deb` in clean Ubuntu 24.04 and 26.04 containers and runs it,
+  so a package that will not install cannot be released.
+
+No change to the program or the format.
+
+## 1.0.0 (2026-10-24)
 
 First public release. Writes format 8; reads formats 6, 7 and 8.
 

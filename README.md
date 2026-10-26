@@ -112,8 +112,12 @@ ever written stays readable by every later version.
 
 ## Install
 
-**Ubuntu, Kubuntu, Debian:** download the `.deb` from
-[Releases](../../releases) and `sudo apt install ./stratazip_*.deb`.
+**Ubuntu and Kubuntu 24.04 or 26.04:** download the `.deb` from
+[Releases](../../releases) and `sudo apt install ./stratazip_*.deb`. Every release is
+installed and tested on both before it is published.
+
+**Other Linux (x86-64, glibc 2.34 or later, Qt 6.4 or later):** download the `.tar.gz`
+from Releases and run `bin/stratazip` from it, or build from source.
 
 **From source** (Qt 6.4 or later, CMake, a C++17 compiler):
 

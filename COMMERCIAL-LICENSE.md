@@ -1,8 +1,3 @@
-<!--
-  DRAFT, first iteration. Have this reviewed by a lawyer before the first sale.
-  Placeholders to settle: the contact address and the Polar link.
--->
-
 # StrataZip Commercial Licence Agreement
 
 Version 1.0

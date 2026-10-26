@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only  Copyright (C) 2026 Steven Thomas Holden -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thank you: StrataZip</title>
+  <meta name="robots" content="noindex">
+  <!-- Polar adds a short-lived portal login token to this address. Never send it on as a referrer. -->
+  <meta name="referrer" content="no-referrer">
+  <script>
+    // Take the token out of the address bar, so it is not bookmarked, shared or kept in history.
+    if (location.search) { history.replaceState(null, "", location.pathname + location.hash); }
+  </script>
+  <link rel="icon" type="image/png" href="../assets/icon-64.png">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="../"><img src="../assets/icon-64.png" alt="" width="36" height="36"><span>Strata<b>Zip</b></span></a>
+  </div>
+</header>
+
+<main class="page">
+  <div class="wrap">
+    <div class="card">
+      <h1>Thank you for buying StrataZip</h1>
+      <p>Your purchase keeps an independent compressor moving. Here is what happens next.</p>
+      <ol>
+        <li><b>Check your email.</b> A message from “StrataZip (via Polar)” brings your receipt and
+          invoice within a minute or two. If you don't see it, look in spam.</li>
+        <li><b>Open “Access purchase”</b> in that email. Polar's customer portal shows your licence
+          key (it starts <code>STZ-</code>) and the date your 12 months of updates run to.</li>
+        <li><b>Keep the key as your record.</b> There is nothing to enter in the program: StrataZip
+          never checks a key and works the same for everyone. Your licence is the legal grant in
+          <a href="https://github.com/thomholden/StrataZip/blob/main/COMMERCIAL-LICENSE.md">COMMERCIAL-LICENSE.md</a>.</li>
+      </ol>
+      <div class="actions">
+        <a class="btn btn-buy" href="https://github.com/thomholden/StrataZip/releases/latest">Download StrataZip</a>
+        <a class="btn btn-plain" href="https://polar.sh/stratazip/portal">Customer portal</a>
+      </div>
+      <p class="caveat">Questions about your licence, an invoice, or a purchase order:
+        <a href="mailto:hello@stratazip.com">hello@stratazip.com</a>.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>© 2026 Steven Thomas Holden.</div>
+    <nav aria-label="Footer"><a href="../">stratazip.com</a><a href="https://github.com/thomholden/StrataZip">GitHub</a></nav>
+  </div>
+</footer>
+
+</body>
+</html>

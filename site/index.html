@@ -1,0 +1,209 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only  Copyright (C) 2026 Steven Thomas Holden -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StrataZip: the smallest archives for structured data</title>
+  <meta name="description" content="StrataZip is a Linux archiver that picks the best coder for every block. The smallest archives for CSV, logs, sensor and market data, audio and genomes, close to the best on everything else, with verification and repair built in.">
+  <link rel="canonical" href="https://stratazip.com/">
+  <link rel="icon" type="image/png" href="assets/icon-64.png">
+  <link rel="apple-touch-icon" href="assets/icon-256.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="StrataZip: the smallest archives for structured data">
+  <meta property="og:description" content="21% under zpaq's strongest mode on market data, 6 to 8% under FLAC on audio, second on the Silesia corpus. Open source (AGPL-3.0) with a commercial licence.">
+  <meta property="og:url" content="https://stratazip.com/">
+  <meta property="og:image" content="https://stratazip.com/assets/banner.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="36" height="36"><span>Strata<b>Zip</b></span></a>
+    <nav aria-label="Main">
+      <a href="#benchmarks" class="hide-s">Benchmarks</a>
+      <a href="https://github.com/thomholden/StrataZip/releases/latest">Download</a>
+      <a href="https://github.com/thomholden/StrataZip#readme" class="hide-s">Docs</a>
+      <a href="https://github.com/thomholden/StrataZip">GitHub</a>
+      <a class="btn btn-buy" href="#pricing">Buy</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero" style="padding-top:24px">
+  <div class="wrap">
+    <div>
+      <h1>Strata<span>Zip</span></h1>
+      <p class="lede">The smallest archives for structured data.</p>
+      <p class="sub">CSV, logs, sensor and market data, audio and genomes: StrataZip tries several
+        coders on every block, keeps the one that wins, and checks every byte on the way out.
+        Close to the best on everything else, with verification and repair built in.</p>
+      <div class="actions">
+        <a class="btn btn-buy btn-big" href="https://buy.polar.sh/polar_cl_TdyygtE7vRQPSmICHFd2XKVP4a7QcoTfSLvcU0vBhZL">Buy Commercial Licence</a>
+        <a class="btn btn-plain" href="https://github.com/thomholden/StrataZip/releases/latest">Download free</a>
+      </div>
+      <p class="fine">Free and open source under the AGPL-3.0. Most people never need to pay:
+        <a href="#need">see who does</a>. Linux x86-64 today; Windows, macOS and a desktop app are planned.</p>
+      <pre class="term"><span class="p">$</span> stratazip -l 9 -c prices.csv prices.stz
+<span class="p">$</span> stratazip -d prices.stz prices.csv</pre>
+    </div>
+    <div class="hero-art">
+      <img src="assets/icon-512.png" alt="The StrataZip icon: a zippered S ribbon with rainbow strata and a gold arrow" width="512" height="512">
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="benchmarks">
+  <div class="wrap">
+    <h2>Measured, not promised</h2>
+    <p class="intro">One thread per tool, and every result decompressed and compared with the
+      original byte for byte. The Silesia numbers can be rerun from the repository on public data.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="n">21%</div><div class="t">smaller than zpaq -m5, the strongest mode of the usual leader, on a Bitcoin price history in CSV</div></div>
+      <div class="stat"><div class="n">6–8%</div><div class="t">smaller than FLAC -8 on 16-bit audio, field recordings and music alike</div></div>
+      <div class="stat"><div class="n">2nd <small>of 12</small></div><div class="t">on the Silesia corpus of mixed real data, and 15% smaller than xz -9e</div></div>
+      <div class="stat"><div class="n">144</div><div class="t">round trips in the Silesia run, every one checked byte for byte</div></div>
+    </div>
+
+    <div class="chart">
+      <h3>Bitcoin price history, 2017 to 2025, CSV (2,575,631 bytes)</h3>
+      <p class="note">Compressed size in bytes; shorter is better.</p>
+      <div class="bar"><span class="lbl">zstd -19</span><span class="track"><span class="fill" style="width:100%; display:block"></span></span><span class="val">200,502</span></div>
+      <div class="bar"><span class="lbl">xz -9e</span><span class="track"><span class="fill" style="width:76.7%; display:block"></span></span><span class="val">153,772</span></div>
+      <div class="bar"><span class="lbl">zpaq -m5</span><span class="track"><span class="fill" style="width:56.4%; display:block"></span></span><span class="val">113,063</span></div>
+      <div class="bar us"><span class="lbl">StrataZip -l 9</span><span class="track"><span class="fill" style="width:44.8%; display:block"></span></span><span class="val">89,798</span></div>
+    </div>
+
+    <div class="two">
+      <div class="tablebox">
+        <table>
+          <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Structured data and audio (bytes)</caption>
+          <thead><tr><th>Data</th><th>Best other</th><th>StrataZip</th></tr></thead>
+          <tbody>
+            <tr><td><i>E. coli</i> genome</td><td>1,114,234 <small>zpaq</small></td><td><b>1,099,133</b></td></tr>
+            <tr><td>Bitcoin prices, float64 pairs</td><td>110,793 <small>zpaq</small></td><td><b>88,913</b></td></tr>
+            <tr><td>Field recordings, ten ESC-50 clips</td><td>1,951,940 <small>FLAC</small></td><td><b>1,788,551</b></td></tr>
+            <tr><td>Two pop songs, 30 s each</td><td>6,668,828 <small>FLAC</small></td><td><b>6,224,960</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tablebox">
+        <table>
+          <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Silesia corpus, 212 MB (MB, smaller is better)</caption>
+          <thead><tr><th>Tool</th><th>Size</th><th>Ratio</th></tr></thead>
+          <tbody>
+            <tr><td>zpaq -m5</td><td>39.11</td><td>5.419</td></tr>
+            <tr class="us"><td>StrataZip -l 9</td><td>41.33</td><td>5.128</td></tr>
+            <tr><td>bzip3</td><td>46.93</td><td>4.516</td></tr>
+            <tr><td>xz -9e</td><td>48.46</td><td>4.374</td></tr>
+            <tr><td>7z -mx=9</td><td>48.76</td><td>4.347</td></tr>
+            <tr><td>zstd --ultra -22</td><td>52.52</td><td>4.035</td></tr>
+            <tr><td>gzip -9</td><td>67.63</td><td>3.134</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p class="caveat">The honest part: level 9 is slow, and as slow to open as to make, like zpaq
+      and cmix. It is for archives you keep. The default level 4 decompresses at about 175 MB/s,
+      three times xz, but is larger than xz today. The Bitcoin file is private and available on
+      request to anyone who wants to check the result. Full tables, the machine and every caveat:
+      <a href="https://github.com/thomholden/StrataZip/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
+  </div>
+</section>
+
+<section id="why">
+  <div class="wrap">
+    <h2>Why it comes out smaller</h2>
+    <p class="intro">Nothing is guessed from a file name. Each block goes to whichever coder
+      measures smallest on that block.</p>
+    <div class="features">
+      <div class="feature"><h3>The right coder per block</h3><p>Text, code and binaries go to a context-mixing model; columns of numbers through derivative filters; 16-bit audio to a waveform coder; DNA to a two-bit coder that learns both strands.</p></div>
+      <div class="feature"><h3>Verified, and repairable</h3><p>A CRC-32 on every block and a SHA-256 on every file. A damaged archive is refused, never silently mis-decoded, and optional Reed-Solomon recovery records (<code>-r 5</code>) can repair it.</p></div>
+      <div class="feature"><h3>Whole trees, incrementally</h3><p>Permissions, times and links kept; identical files stored once. Give it last night's archive with <code>--from</code> and unchanged files are not even read again.</p></div>
+      <div class="feature"><h3>One file out of many</h3><p><code>--get</code> decodes only the blocks that hold the file you asked for.</p></div>
+      <div class="feature"><h3>Safe writes</h3><p>Output goes to a temporary name and is renamed into place only when it is complete.</p></div>
+      <div class="feature"><h3>Readable forever</h3><p>Every <code>.stz</code> archive StrataZip has written stays readable by every later version. The format is <a href="https://github.com/thomholden/StrataZip/blob/main/docs/FORMAT.md">documented in full</a>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="pricing">
+  <div class="wrap">
+    <h2>Commercial licence</h2>
+    <p class="intro">Perpetual, with 12 months of updates, the way JetBrains does it. Keep the
+      version you bought forever; renew only if you want newer ones. StrataZip never checks a key
+      and never phones home: the licence is a legal grant, and the program is the same for everyone.</p>
+
+    <div class="plans">
+      <div class="plan"><h3>Professional</h3><p class="who">One named person, any number of their machines.</p><div class="price">$39 <small>USD</small></div><div class="renew">Renewal $19 for 12 more months</div></div>
+      <div class="plan pick"><h3>Team</h3><p class="who">Up to 10 named people in one organisation.</p><div class="price">$299 <small>USD</small></div><div class="renew">Renewal $149 for 12 more months</div></div>
+      <div class="plan"><h3>Server</h3><p class="who">Unlimited use on the servers and CI of one organisation.</p><div class="price">$499 <small>USD</small></div><div class="renew">Renewal $249 for 12 more months</div></div>
+    </div>
+
+    <div class="buybar">
+      <a class="btn btn-buy btn-big" href="https://buy.polar.sh/polar_cl_TdyygtE7vRQPSmICHFd2XKVP4a7QcoTfSLvcU0vBhZL">Buy Commercial Licence</a>
+      <p>Choose your plan at checkout. Sold through Polar, the merchant of record, which handles
+        payment, invoices and sales tax. Prices exclude tax where it applies.<br>
+        Shipping StrataZip inside your own product (OEM), more than 10 people, or a purchase order:
+        <a href="mailto:hello@stratazip.com">hello@stratazip.com</a>.
+        Already a customer? <a href="https://github.com/thomholden/StrataZip/blob/main/COMMERCIAL.md#renewing">Renew here</a>.</p>
+    </div>
+
+    <div class="need" id="need">
+      <div class="free">
+        <h3>You don't need one to</h3>
+        <ul>
+          <li>use the <code>stratazip</code> command, at home or at work, including on company servers and in internal scripts;</li>
+          <li>study, modify and share StrataZip under the AGPL;</li>
+          <li>build it into a project that is itself open source under the AGPL-3.0 or GPL-3.0.</li>
+        </ul>
+      </div>
+      <div class="paid">
+        <h3>You need one if you</h3>
+        <ul>
+          <li>ship StrataZip, or any of its code, inside a product that is not open source;</li>
+          <li>run a network service on a modified StrataZip and don't want to publish your changes;</li>
+          <li>work somewhere whose policy doesn't allow AGPL software.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="caveat">Unsure? <a href="https://github.com/thomholden/StrataZip/discussions">Ask in Discussions</a>
+      and we'll tell you honestly. The full terms are in
+      <a href="https://github.com/thomholden/StrataZip/blob/main/COMMERCIAL-LICENSE.md">COMMERCIAL-LICENSE.md</a>.</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="intro">Ubuntu and Kubuntu 24.04 or 26.04: download the <code>.deb</code> from
+      <a href="https://github.com/thomholden/StrataZip/releases/latest">the latest release</a>. Every
+      release is installed and tested on both before it is published. Other x86-64 Linux: use the
+      <code>.tar.gz</code>, or build from source with Qt 6.4 and CMake.</p>
+    <pre class="term"><span class="p">$</span> sudo apt install ./stratazip_*.deb
+<span class="p">$</span> stratazip --test</pre>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>© 2026 Steven Thomas Holden. StrataZip is free software under the
+      <a href="https://github.com/thomholden/StrataZip/blob/main/LICENSE">AGPL-3.0</a>, with a commercial licence available.</div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/thomholden/StrataZip">GitHub</a>
+      <a href="https://github.com/thomholden/StrataZip/blob/main/SECURITY.md">Security</a>
+      <a href="mailto:hello@stratazip.com">hello@stratazip.com</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

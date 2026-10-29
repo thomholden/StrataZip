@@ -53,7 +53,7 @@ were not run here.
 
 ### Structured data, genomes and text
 
-| Data | Size | xz -9e | zstd -19 | zpaq -m5 | **StrataZip -l 9** | **StrataZip -l 10** |
+| Data | Size | xz -9e | zstd -19 | zpaq -m5 | **StrataZip&nbsp;-l&nbsp;9** | **StrataZip&nbsp;-l&nbsp;10** |
 |---|---:|---:|---:|---:|---:|---:|
 | Bitcoin price history, 2017 to 2025, CSV | 2,575,631 | 153,772 | 200,502 | 113,063 | 82,925 | **82,818** |
 | Bike&Safe sensor logs (the dataset as a tar) | 47,544,320 | 15,109,452 | 15,663,947 | 11,540,076 | 10,516,775 | **10,222,204** |

@@ -74,8 +74,20 @@ jobs:
         run: |
           sha256sum *.deb *.tar.gz > SHA256SUMS
           # The release notes are the tag's section of CHANGELOG.md, from its heading to the next.
+          # GitHub keeps line breaks in release notes, so wrapped lines are joined: a paragraph
+          # into one line, and a bullet's indented continuation lines onto the bullet; headings
+          # and table rows stay as they are.
           v="${GITHUB_REF_NAME#v}"
-          awk -v v="$v" '/^## / { if (f) exit; if (index($0, "## " v " ") == 1) { f = 1; next } } f' src/CHANGELOG.md > notes.md
+          awk -v v="$v" '
+            /^## / { if (f) exit; if (index($0, "## " v " ") == 1) { f = 1; next } }
+            !f { next }
+            /^$/ { if (b != "") print b; b = ""; print ""; next }
+            /^(#|\|)/ { if (b != "") print b; b = ""; print; next }
+            /^- / { if (b != "") print b; b = $0; next }
+            /^  [^ ]/ { sub(/^ +/, ""); b = b " " $0; next }
+            { b = (b == "") ? $0 : b " " $0 }
+            END { if (b != "") print b }
+          ' src/CHANGELOG.md > notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section for $v"; exit 1; }
           gh release create "$GITHUB_REF_NAME" *.deb *.tar.gz SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --title "StrataZip $v" --notes-file notes.md

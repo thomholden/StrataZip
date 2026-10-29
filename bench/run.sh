@@ -46,4 +46,5 @@ for f in $FILES; do
   run stz6 $f "$Z -l 6 -j 1 -c $i $W/c >/dev/null" "$Z -d -j 1 $W/c $W/d >/dev/null"
   have zpaq   && run zpaq5    $f "cd $W && cp $i $f && zpaq a c.zpaq $f -m5 -t1 >/dev/null 2>&1 && rm $f && mv c.zpaq c" "cd $W && cp c c.zpaq && mkdir x && cd x && zpaq x ../c.zpaq -t1 >/dev/null 2>&1 && mv $f ../d"
   run stz9 $f "$Z -l 9 -j 1 -c $i $W/c >/dev/null" "$Z -d -j 1 $W/c $W/d >/dev/null"
+  run stz10 $f "$Z -l 10 -j 1 -c $i $W/c >/dev/null" "$Z -d -j 1 $W/c $W/d >/dev/null"
 done

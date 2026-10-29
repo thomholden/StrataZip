@@ -18,10 +18,22 @@ Because Qt is linked dynamically, you may replace the Qt libraries StrataZip use
 your own modified versions; the packages released by this project use the Qt libraries
 of the operating system.
 
+## zlib
+
+StrataZip includes the deflate and inflate parts of **zlib 1.3.1**, unchanged, in
+`src/zlib/`. It uses them only to recompress deflate streams found inside ZIP, gzip and
+PDF data, and to make them again, bit for bit, on extraction.
+
+- Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler.
+- Licensed under the zlib licence, reproduced in `src/zlib/LICENSE`.
+- Source code: <https://github.com/madler/zlib>, tag `v1.3.1`.
+
 ## Algorithms
 
 StrataZip's code was written for this project. Its methods draw on published
 work, credited in the source where each is used, including: LZ77 (Ziv and Lempel),
-asymmetric numeral systems (Duda), context mixing (Mahoney's PAQ and lpaq), LOCO-I's
-median predictor, the Levinson-Durbin recursion, Reed-Solomon codes, the CRC folding
+asymmetric numeral systems (Duda), context mixing (Mahoney's PAQ and lpaq; paq8's
+indirect and sparse models), LOCO-I's median predictor, CALIC's gradient-adjusted
+prediction and bias cancellation (Wu and Memon), the word-replacing transform
+(Skibinski), deflate recompression (as precomp does it), the Levinson-Durbin recursion, Reed-Solomon codes, the CRC folding
 method of Gopal et al. (Intel), and SHA-256 (FIPS 180-4).

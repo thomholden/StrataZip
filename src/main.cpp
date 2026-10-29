@@ -40,6 +40,7 @@
 // archive may ever decode to anything but the original.
 
 #include "stratazip.h"
+#include "recompress.h"
 #include "sha256.h"
 
 #include <QCoreApplication>
@@ -55,6 +56,10 @@
 #include <QDirIterator>
 #include <QRandomGenerator>
 #include <QTextStream>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QCryptographicHash>
 
 #include <cmath>
 #include <cstring>
@@ -79,18 +84,32 @@ filred(const QString& pth, QByteArray& dat) {
 void
 hlp() {
     out << stratazip::Archiver::ver() << "\n"
-        << "usage: stratazip [-l 1-9] [-b KiB] [-j threads] [-r percent] <mode>\n"
+        << "usage: stratazip [-l 1-10] [-e] [-F] [-b KiB] [-j threads] [-r percent] [-q] <mode>\n"
         << "  -c, --compress    <in> <out>   \"-\" for stdin or stdout; <in> may be a directory\n"
         << "      --from        <arc>        with a directory: the archive it replaces, for speed\n"
         << "  -d, --decompress  <in> <out>   a directory archive into the directory <out>\n"
         << "      --list        <in>         the members of a directory archive\n"
         << "      --get         <in> <path> <out>   one member of a directory archive\n"
+        << "      --info        <in>...      what an archive is made of, without decoding it;\n"
+        << "                                 with --json, as JSON, and a directory's members with\n"
+        << "                                 their sizes, times and SHA-256s\n"
         << "  -v, --verify      <in>...      decode and check, writing nothing\n"
         << "  -x, --repair      <in> <out>   repair a copy from the recovery records\n"
         << "  -k, --check       <in>...      round trip in memory, report ratio and speed\n"
         << "  -t, --test                     self-test against known answers\n"
-        << "  -l 1-9: 1 fastest, 4 default, 6 strongest fast-decoding, 9 strongest (slow to decode)\n"
-        << "      --version\n";
+        << "      --version\n"
+        << "options:\n"
+        << "  -l 1-10                        level (default 4): 4 for speed, 6 strongest fast-decoding,\n"
+        << "                                 7 for strength, 9 for the smallest file at a practical pace\n"
+        << "  -e, --extreme                  level 10: every resource for the last bits; tables sized to\n"
+        << "                                 the free memory (at most 75% of it); decoding needs the same\n"
+        << "                                 memory per thread, and fewer threads if memory is short\n"
+        << "  -F, --compress-all             code everything, even data as dense as noise\n"
+        << "                                 (archives, encrypted data), which levels 1 to 9 store as it is\n"
+        << "  -b KiB                         block size (default 4096; 65536 at level 10)\n"
+        << "  -j threads                     worker threads (default all that fit in memory)\n"
+        << "  -r percent                     recovery record, 0 to 100 (default 0)\n"
+        << "  -q, --quiet                    no report after compressing\n";
 }
 
 // One round trip, reported. Returns false on any mismatch.
@@ -400,9 +419,218 @@ slftst() {
             const bool ok = zip.decompress(QByteArray::fromHex(h), b).ok && b == in;
             chk(ok, QString("reads a format-7 archive (%1)").arg(h == f7l4 ? "LZ, level 4" : "context mixed, level 7"));
         }
-        QByteArray a7;
-        zip.compress(in, a7);
-        chk(a7.startsWith("HDZ8") && a7[4] == 8, "writes HDZ8");
+    // Format 8 is still read: an archive StrataZip 1.0 wrote at level 4 (LZ) and one at level 7 (cm8).
+    const char* f8l4 =
+        "48445a3808001000000088130000cc0100000148be586e0201550200fe01006030003060003030d00100000030303000"
+        "600000303090010030000000000000300000600030000000000000000000000000000000000000000000003000000000"
+        "000030000000000000000000000000000000000030000000000000000000000000003000000000000000000000000000"
+        "000000000000000000000000000000000000000000000000300030000030000030000000000000606000000000c00100"
+        "006000600060300030006000300030003000000000000000000060000030309001003000000000003000003000003000"
+        "000000000000000000000000300000000000600060000000300000900100600000000000003030000000003030003030"
+        "304a8685b111e44bfe720f9ed70593ab55204f909f52a966b751b4779801ec3b366bfdd42e30c843f9177164e6c8a82b"
+        "e2bb080801be44ad5120aee4e9d49a6ff0d53ad5fc692550f090d0801300000080100000000000000000000000000000"
+        "801010000800010000000100008000000080001800000000000000000000000000000000000000000000801080101000"
+        "0800010000000100008000000080000a008010000000000000008010100008000100000001000080000000800005d2d8"
+        "20e50100000000100000007fae051b62881300000000000048be586e01000000"
+        ;
+    const char* f8l7 =
+        "48445a3808001000000088130000ff0000000748be586e078000008000400000000000a84d1a7d4fe2122e7f3ed8467f"
+        "1944a7a829fa341f409a21fa65a68a1d0d1b9bebac2b83ce9b8c352601131c033059f0a7f6ee87f8a484a790ab04d143"
+        "6144555c05177a261638c5b4240073e417766d2477d3e907c43039cabb89b239d80ed2c71a2f2a4afd9174e62302a828"
+        "92b159a4605f20881fcde6f8a0aeba70f377aeecf39229e9993953d16b116fe210e71ddf591ef06b53dfdb6fa5f9cedf"
+        "6a59c298366767758aedc76a188a00dc91c7d11bbf8736e5bed94e26a9d489a7ab83680844e9b35d2266402a0dbef7ad"
+        "83ca640ef7690795916848f6947994824fcc68a464f37b00df86b2a6bf6ec13061af97c6702b00000000100000007fae"
+        "051b62881300000000000048be586e01000000"
+        ;
+        for (const char* h : {f8l4, f8l7}) {
+            QByteArray b;
+            const bool ok = zip.decompress(QByteArray::fromHex(h), b).ok && b == in;
+            chk(ok, QString("reads a format-8 archive (%1)").arg(h == f8l4 ? "LZ, level 4" : "context mixed, level 7"));
+        }
+        QByteArray a9;
+        zip.compress(in, a9);
+        chk(a9.startsWith("HDZ9") && a9[4] == 9, "writes HDZ9");
+    }
+
+    // The picture coder (mode 10), found by the analysis. A synthetic 16-bit greyscale
+    // picture (smooth gradients, a few edges and noise): with a header, little- and
+    // big-endian, with an odd byte after the last sample, at a width that does not divide
+    // the block, at levels 4 and 9 and in small blocks; each found, coded as a picture,
+    // smaller, and exact. And damage: refused or harmless, never wrong.
+    {
+        auto mkpic = [&](int w, int h, int hdr, bool be, int tail) {
+            QByteArray d;
+            for (int i = 0; i < hdr; ++i) d += char(rng.bounded(256));
+            for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+                int v = 8000 + 30 * x + 20 * y + int(4000 * std::sin(x * 0.02) * std::cos(y * 0.015)) + int(rng.bounded(40));
+                if ((x / 64 + y / 64) % 5 == 0) v += 9000;
+                v = std::clamp(v, 0, 65535);
+                if (be) { d += char(v >> 8); d += char(v & 255); } else { d += char(v & 255); d += char(v >> 8); }
+            }
+            for (int i = 0; i < tail; ++i) d += char(rng.bounded(256));
+            return d;
+        };
+        struct pcs { int w, h, hdr; bool be; int tail, lvl, blk; };
+        const pcs ps[] = {{700, 600, 512, false, 0, 4, 4096}, {700, 600, 512, true, 1, 9, 4096}, {613, 500, 0, false, 0, 4, 128}, {1024, 300, 9092, false, 1, 7, 4096}};
+        for (const pcs& c : ps) {
+            const QByteArray d = mkpic(c.w, c.h, c.hdr, c.be, c.tail);
+            stratazip::Archiver zp(c.lvl, c.blk);
+            QByteArray a, b;
+            const bool ok = zp.compress(d, a).ok && zp.decompress(a, b).ok && b == d;
+            const auto& k = zp.stats();
+            chk(ok && k.pwd == c.w && k.pbe == c.be && k.phd == quint64(c.hdr) && k.cnt[10] > 0 && a.size() * 2 < d.size(),
+                QString("picture %1 x %2, %3-endian, header %4, tail %5, level %6, %7 KiB blocks: found and coded as one, %8 -> %9 bytes, exact")
+                    .arg(c.w).arg(c.h).arg(c.be ? "big" : "little").arg(c.hdr).arg(c.tail).arg(c.lvl).arg(c.blk).arg(d.size()).arg(a.size()));
+        }
+        const QByteArray d = mkpic(512, 300, 0, false, 0);
+        stratazip::Archiver zp(4, 4096);
+        QByteArray a, b;
+        zp.compress(d, a);
+        int refused = 0, intact = 0, wrong = 0;
+        for (int i = 0; i < a.size(); i += 7) {
+            QByteArray bad = a;
+            bad[i] = char(bad[i] ^ 0x5A);
+            if (!zp.decompress(bad, b).ok) ++refused; else if (b == d) ++intact; else ++wrong;
+        }
+        chk(wrong == 0, QString("damaged picture archives: %1 refused, %2 harmless, %3 wrong").arg(refused).arg(intact).arg(wrong));
+    }
+
+    // Groups. Text in 256 KiB blocks at levels 7 and 9: alike, so coded as a
+    // group, with a primer and a word dictionary; out and back exact. A mixed input: text and
+    // machine code, two groups and no stranger mixed in. Damage: refused or harmless.
+    {
+        QByteArray tx;
+        int w = 0;
+        static const char* wd[] = {"the", "hierarchical", "view", "and", "egalitarian", "meet", "in", "contextual", "dataflow", "Pyramid", "TRUNCATED", "of", "a", "circle", "squares"};
+        while (tx.size() < 1100000) { tx += wd[rng.bounded(15)]; tx += (++w % 13) ? " " : ".\n"; }
+        for (int lvl : {7, 9}) {
+            stratazip::Archiver zp(lvl, 256);
+            QByteArray a, b;
+            const bool ok = zp.compress(tx, a).ok && zp.decompress(a, b).ok && b == tx;
+            const auto& k = zp.stats();
+            chk(ok && k.cnt[12] >= 4 && k.cnt[11] >= 1, QString("groups, level %1: %2 blocks in %3 group(s), %4 -> %5 bytes, exact").arg(lvl).arg(k.cnt[12]).arg(k.cnt[11]).arg(tx.size()).arg(a.size()));
+        }
+        {   // one large block, which may carry its own word dictionary (by a warm trial)
+            const QByteArray big = tx + tx.left(300000);
+            stratazip::Archiver zp(8, 2048);
+            QByteArray a, b;
+            const bool ok = zp.compress(big, a).ok && zp.decompress(a, b).ok && b == big;
+            chk(ok, QString("one large text block, level 8: %1 -> %2 bytes, exact").arg(big.size()).arg(a.size()));
+        }
+        {   // --info reads an archive's records without decoding them
+            stratazip::Archiver zp(7, 256);
+            QByteArray a;
+            zp.compress(tx, a);
+            QBuffer ib(&a);
+            ib.open(QIODevice::ReadOnly);
+            QStringList l;
+            const bool ok = stratazip::Archiver::archiveInfo(ib, l).ok;
+            const QString j = l.join("\n");
+            chk(ok && j.contains("HDZ9") && j.contains("group record: 1 record") && j.contains("grouped:") && j.contains(QString("end: %1 bytes").arg(tx.size())),
+                "--info: format, groups and totals read without decoding");
+            QBuffer jb(&a);
+            jb.open(QIODevice::ReadOnly);
+            QByteArray js;
+            QStringList l2;
+            const bool jok = stratazip::Archiver::archiveInfo(jb, l2, &js).ok;
+            const QJsonObject o = QJsonDocument::fromJson(js).object();
+            chk(jok && o["format"].toString() == "HDZ9" && qint64(o["bytes"].toDouble()) == tx.size() && qint64(o["archive_bytes"].toDouble()) == a.size()
+                    && o["groups"].toObject()["groups"].toInt() == 1,
+                "--info --json: valid JSON; format, bytes, the archive's size and its groups right");
+        }
+        {
+            const QByteArray mx = tx.left(600000) + x86 + x86 + tx.mid(600000, 500000) + x86;
+            stratazip::Archiver zp(7, 256);
+            QByteArray a, b;
+            const bool ok = zp.compress(mx, a).ok && zp.decompress(a, b).ok && b == mx;
+            const auto& k = zp.stats();
+            chk(ok && k.cnt[11] >= 2, QString("groups of a mixed input: %1 group(s), %2 grouped and %3 other blocks, exact").arg(k.cnt[11]).arg(k.cnt[12]).arg(k.cnt[9] + k.cnt[1] + k.cnt[0]));
+            int refused = 0, intact = 0, wrong = 0;
+            for (int i = 0; i < a.size(); i += 997) {
+                QByteArray bad = a;
+                bad[i] = char(bad[i] ^ 0x24);
+                if (!zp.decompress(bad, b).ok) ++refused; else if (b == mx) ++intact; else ++wrong;
+            }
+            chk(wrong == 0, QString("damaged group archives: %1 refused, %2 harmless, %3 wrong").arg(refused).arg(intact).arg(wrong));
+        }
+    }
+
+    // Deflate streams. A hand-made ZIP local entry, a gzip member and a PDF
+    // stream, each deflated by zlib at a different setting, between other bytes: each found,
+    // unwrapped, and made again exactly, at levels 4 and 9; a stream deflated and then
+    // damaged inside (so zlib cannot remake it) left as it is; and damage to the archive
+    // refused or harmless, never wrong.
+    {
+        QByteArray tx;
+        while (tx.size() < 200000) tx += "Whole into the blocks, one circle into many squares, every unused byte put to work. ";
+        auto dfl = [&](int lvl, int mem) { std::vector<quint8> o; stratazip::dfl::rdf(reinterpret_cast<const quint8*>(tx.constData()), size_t(tx.size()), lvl, mem, &o); return QByteArray(reinterpret_cast<const char*>(o.data()), int(o.size())); };
+        auto le = [](QByteArray& b, quint32 v, int n) { for (int i = 0; i < n; ++i) b += char(v >> (8 * i)); };
+        QByteArray zip("PK\x03\x04", 4), d6 = dfl(6, 8), d9 = dfl(9, 9), d1 = dfl(1, 8);
+        le(zip, 20, 2); le(zip, 0, 2); le(zip, 8, 2); le(zip, 0, 4); le(zip, 0, 4); le(zip, quint32(d6.size()), 4); le(zip, quint32(tx.size()), 4); le(zip, 5, 2); le(zip, 0, 2);
+        zip += "a.txt"; zip += d6;
+        QByteArray gz("\x1f\x8b\x08\x08\0\0\0\0\0\x03", 10); gz += "b.txt"; gz += char(0); gz += d9; le(gz, 0, 8);
+        QByteArray pdf("<< /Filter /FlateDecode >>\nstream\n"); pdf += char(0x78); pdf += char(0x01); pdf += d1; pdf += "\nendstream\n";
+        QByteArray bad = dfl(6, 8); bad[bad.size() / 2] = char(bad[bad.size() / 2] ^ 1);
+        QByteArray bz("PK\x03\x04", 4); le(bz, 20, 2); le(bz, 0, 2); le(bz, 8, 2); le(bz, 0, 12); le(bz, quint32(bad.size()), 4); le(bz, 0, 4); le(bz, 1, 2); le(bz, 0, 2); bz += "c"; bz += bad;
+        const QByteArray in = rnd.left(30000) + zip + txt.left(20000) + gz + rnd.left(1000) + pdf + bz + rnd.left(5000);
+        for (int lvl : {4, 9}) {
+            stratazip::Archiver zp(lvl, 1024);
+            QByteArray a, b;
+            const bool ok = zp.compress(in, a).ok && zp.decompress(a, b).ok && b == in;
+            const auto& k = zp.stats();
+            chk(ok && k.dfn == 3, QString("deflate streams, level %1: %2 of 3 unwrapped (zip, gzip, pdf), %3 -> %4 bytes, exact").arg(lvl).arg(k.dfn).arg(in.size()).arg(a.size()));
+        }
+        {
+            stratazip::Archiver zp(4, 1024);
+            QByteArray a, b;
+            zp.compress(in, a);
+            int refused = 0, intact = 0, wrong = 0;
+            for (int i = 0; i < a.size(); i += 61) {
+                QByteArray bd = a;
+                bd[i] = char(bd[i] ^ 0x31);
+                if (!zp.decompress(bd, b).ok) ++refused; else if (b == in) ++intact; else ++wrong;
+            }
+            chk(wrong == 0, QString("damaged archives with deflate streams: %1 refused, %2 harmless, %3 wrong").arg(refused).arg(intact).arg(wrong));
+            QTemporaryDir gd;
+            filput(gd.path() + "/t/first.bin", rnd.left(70000));
+            filput(gd.path() + "/t/mixed.bin", in);
+            filput(gd.path() + "/t/last.bin", txt.left(90000));
+            stratazip::Archiver zd(4, 64);
+            QByteArray ar;
+            QBuffer ab(&ar);
+            ab.open(QIODevice::WriteOnly);
+            zd.compressDirectory(gd.path() + "/t", ab);
+            ab.close();
+            int got = 0;
+            for (const char* f : {"first.bin", "mixed.bin", "last.bin"}) {
+                QBuffer ib(&ar), ob;
+                ib.open(QIODevice::ReadOnly); ob.open(QIODevice::WriteOnly);
+                QFile o(gd.path() + "/t/" + f); o.open(QIODevice::ReadOnly);
+                if (zd.extractFile(ib, f, ob).ok && ob.data() == o.readAll()) ++got;
+            }
+            chk(got == 3 && zd.stats().dfn == 3, QString("one file out past deflate streams: %1 of 3 exact").arg(got));
+        }
+    }
+
+    // Already-compressed data stored as it is at levels 1 to 9; -F codes it anyway; the
+    // extreme level tries it anyway. The input is 150 KB of random bytes four times over:
+    // every sample looks like noise, so it is taken as already compressed, yet a coder that
+    // tries finds the repeats.
+    {
+        QByteArray r(150000, '\0');
+        for (char& c : r) c = char(rng.bounded(256));
+        const QByteArray d = r + r + r + r;
+        for (int lvl : {4, 9, 10}) for (bool all : {false, true}) {
+            if (lvl == 10 && all) continue;
+            stratazip::Archiver zp(lvl, 1024);
+            zp.setCompressAll(all);
+            QByteArray a, b;
+            const bool ok = zp.compress(d, a).ok && zp.decompress(a, b).ok && b == d;
+            const bool want = lvl <= 9 && !all;
+            const bool sto = a.size() > d.size();
+            chk(ok && sto == want, QString("dense data, level %1%2: %3, %4 -> %5 bytes, exact")
+                    .arg(lvl).arg(all ? ", -F" : "").arg(want ? "stored without trying a coder" : "coded").arg(d.size()).arg(a.size()));
+        }
     }
 
     // Audio: 16-bit PCM through the waveform coder, at a fast level and a strong one,
@@ -639,6 +867,45 @@ slftst() {
             const bool nd = !zd.extractFile(i1, "a/b", sink).ok && !zd.extractFile(i2, "no/such", sink).ok;
             chk(got == all && all >= 7 && nd, QString("one file out of a directory archive: %1 of %2 exact; a directory and a missing path refused").arg(got).arg(all));
         }
+        // One file out of a group. Four text files of 400 KB at level 7 in 256 KiB
+        // blocks: their blocks are grouped, and each file comes out through its group's
+        // record, exact; the whole tree out and back exact too.
+        {
+            QTemporaryDir gd;
+            QByteArray tx;
+            int w = 0;
+            static const char* wd[] = {"alpha", "beta", "gamma", "delta", "Epsilon", "zeta", "eta", "theta", "iota", "kappa"};
+            while (tx.size() < 1700000) { tx += wd[rng.bounded(10)]; tx += (++w % 11) ? " " : ".\n"; }
+            for (int k = 0; k < 4; ++k) filput(gd.path() + QString("/g/f%1.txt").arg(k), tx.mid(k * 400000, 400000));
+            stratazip::Archiver zg(7, 256);
+            QByteArray ar;
+            QBuffer ab(&ar);
+            ab.open(QIODevice::WriteOnly);
+            zg.compressDirectory(gd.path() + "/g", ab);
+            ab.close();
+            int got = 0;
+            for (int k = 0; k < 4; ++k) {
+                QBuffer ib(&ar), ob;
+                ib.open(QIODevice::ReadOnly); ob.open(QIODevice::WriteOnly);
+                if (zg.extractFile(ib, QString("f%1.txt").arg(k).toUtf8(), ob).ok && ob.data() == tx.mid(k * 400000, 400000)) ++got;
+            }
+            QBuffer ib(&ar);
+            ib.open(QIODevice::ReadOnly);
+            const bool whl = zg.extractDirectory(ib, gd.path() + "/out").ok && trecmp(gd.path() + "/g", gd.path() + "/out").isEmpty();
+            chk(got == 4 && whl && zg.stats().cnt[11] >= 1, QString("one file out of a group: %1 of 4 exact (%2 group(s)); the tree out and back exact").arg(got).arg(zg.stats().cnt[11]));
+            QBuffer jb(&ar);
+            jb.open(QIODevice::ReadOnly);
+            QByteArray js;
+            QStringList l2;
+            stratazip::Archiver::archiveInfo(jb, l2, &js);
+            int hok = 0;
+            for (const QJsonValue& v : QJsonDocument::fromJson(js).object()["members"].toArray()) {
+                const QJsonObject m = v.toObject();
+                const int k = m["path"].toString().mid(1, 1).toInt();
+                if (m["size"].toInt() == 400000 && m["sha256"].toString() == QString::fromLatin1(QCryptographicHash::hash(tx.mid(k * 400000, 400000), QCryptographicHash::Sha256).toHex())) ++hok;
+            }
+            chk(hok == 4, QString("--info --json lists a directory's members: %1 of 4 with their size and SHA-256 right").arg(hok));
+        }
     }
 
     out << (bad ? QString("%1 check(s) failed\n").arg(bad) : QString("all checks passed\n"));
@@ -661,6 +928,29 @@ dstprn(const stratazip::Archiver::DirStats& d) {
                .arg(d.files).arg(d.dirs).arg(d.links).arg(d.bytes).arg(d.dups);
 }
 
+// What the analysis found and which coder took which share (the intelligence,
+// made visible).
+QString
+kstprn(const stratazip::Archiver::Stats& k) {
+    static const char* nam[16] = {"stored", "LZ", "", "", "", "DNA", "", "", "audio", "context-mixed", "picture", "", "grouped", "", "", ""};
+    QString s;
+    quint64 r = 0, e = 0;
+    for (int m = 0; m < 16; ++m) { r += k.raw[size_t(m)]; e += k.enc[size_t(m)]; }
+    if (!r) return s;
+    if (k.pwd && k.cnt[10]) s += QString("  found: a 16-bit greyscale picture, %1 samples wide, %2-endian, %3 header bytes\n").arg(k.pwd).arg(k.pbe ? "big" : "little").arg(k.phd);
+    if (k.dfn) s += QString("  found: %1 deflate stream(s) (zip, jar, gzip, pdf...), %2 bytes, unwrapped to %3 and made again exactly on the way out\n").arg(k.dfn).arg(k.dfc).arg(k.dfu);
+    for (int m = 0; m < 16; ++m) {
+        if (!k.cnt[size_t(m)] || m == 11) continue;
+        const QString why = m == 0 ? " (already compressed, or would not shrink)" : QString();
+        // A group's blocks are counted with their group records (primer, word dictionary).
+        const quint64 en = k.enc[size_t(m)] + (m == 12 ? k.enc[11] : 0);
+        const QString gw = m == 12 ? QString(" in %1 group(s), sharing a primer and, for text, a word dictionary").arg(k.cnt[11]) : QString();
+        s += QString("  %1 %2 block(s): %3 -> %4 bytes (%5%)%6%7\n").arg(nam[m], 14).arg(k.cnt[size_t(m)], 4).arg(k.raw[size_t(m)], 12).arg(en, 12)
+                 .arg(100.0 * double(en) / double(std::max<quint64>(1, k.raw[size_t(m)])), 0, 'f', 1).arg(why, gw);
+    }
+    return s;
+}
+
 } // namespace
 
 int
@@ -670,6 +960,7 @@ main(int argc, char* argv[]) {
     arg.removeFirst();
 
     int lvl = 4, blk = 4096, thr = 0, rcv = 0;
+    bool all = false, qui = false, jsn = false;
     QString mod, from;
     QStringList pos;
     for (int i = 0; i < arg.size(); ++i) {
@@ -679,6 +970,10 @@ main(int argc, char* argv[]) {
             if (a == "-l") lvl = v; else if (a == "-b") blk = v; else if (a == "-r") rcv = v; else thr = v;
         }
         else if (a == "--from" && i + 1 < arg.size()) from = arg[++i];
+        else if (a == "-e" || a == "--extreme")    lvl = 10;
+        else if (a == "-F" || a == "--compress-all") all = true;
+        else if (a == "-q" || a == "--quiet")      qui = true;
+        else if (a == "--json")                    jsn = true;
         else if (a == "-c" || a == "--compress")   mod = "c";
         else if (a == "-d" || a == "--decompress") mod = "d";
         else if (a == "-k" || a == "--check")      mod = "k";
@@ -686,6 +981,7 @@ main(int argc, char* argv[]) {
         else if (a == "-v" || a == "--verify")     mod = "v";
         else if (a == "--list")                    mod = "L";
         else if (a == "--get")                     mod = "g";
+        else if (a == "--info")                    mod = "i";
         else if (a == "-t" || a == "--test")       mod = "t";
         else if (a == "-h" || a == "--help")       { hlp(); return 0; }
         else if (a == "--kernels")                 { QStringList l; const bool k = stratazip::Archiver::kernelSelfTest(l); for (const QString& x : l) out << x << "\n"; return k ? 0 : 1; }
@@ -694,7 +990,12 @@ main(int argc, char* argv[]) {
     }
 
     QTextStream err(stderr);
+    // The extreme level's blocks are large (64 MiB), unless -b says otherwise: a block that
+    // large is coded as one solid stream, the plan's best measured case (webster −8.9%
+    // against 4 MiB blocks), and the analysis's clusters still run in parallel.
+    if (lvl >= 10 && !arg.contains("-b")) blk = 65536;
     stratazip::Archiver zip(lvl, blk, thr, rcv);
+    zip.setCompressAll(all);
     if (mod == "t") return slftst();
     if (mod == "k" && !pos.isEmpty()) {
         bool ok = true;
@@ -702,6 +1003,7 @@ main(int argc, char* argv[]) {
             QByteArray raw;
             if (!filred(p, raw)) return 2;
             ok = rndtrp(zip, p.section('/', -1), raw, true) && ok;
+            if (!qui) out << kstprn(zip.stats());
         }
         return ok ? 0 : 1;
     }
@@ -746,6 +1048,7 @@ main(int argc, char* argv[]) {
         }
         if (dirin) err << dstprn(d) << QString("; %1 segment(s) coded, %2 copied from the base, %3 file(s) not read again; %4 left out (not files, directories or links)\n")
                                             .arg(d.segmentsCoded).arg(d.segmentsCopied).arg(d.quickChecked).arg(d.skipped);
+        if (mod == "c" && !qui && pos[1] != "-") err << kstprn(zip.stats());
         return 0;
     }
     if (mod == "g" && pos.size() == 3) {
@@ -779,6 +1082,27 @@ main(int argc, char* argv[]) {
         out << dstprn(d) << "\n";
         if (!r.ok) { err << "error: " << r.message << "\n"; return 1; }
         return 0;
+    }
+    if (mod == "i" && !pos.isEmpty()) {
+        bool ok = true;
+        for (const QString& p : pos) {
+            QFile src(p);
+            QStringList l;
+            QByteArray js;
+            stratazip::Archiver::Result r;
+            if (!src.open(QIODevice::ReadOnly)) r.message = "cannot read";
+            else r = stratazip::Archiver::archiveInfo(src, l, jsn ? &js : nullptr);
+            if (jsn) {
+                if (r.ok) out << js;
+                else err << p << ": error: " << r.message << "\n";
+            } else {
+                out << p << ":\n";
+                for (const QString& x : l) out << "  " << x << "\n";
+                if (!r.ok) out << "  error: " << r.message << "\n";
+            }
+            ok = ok && r.ok;
+        }
+        return ok ? 0 : 1;
     }
     if (mod == "v" && !pos.isEmpty()) {
         bool ok = true;

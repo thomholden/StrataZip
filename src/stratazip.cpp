@@ -10,16 +10,20 @@
 // top of stratazip.h; docs/FORMAT.md describes the format in prose.
 //
 
-// Archive layout (format 8), all integers little-endian:
+// Archive layout (format 9), all integers little-endian:
 //
-//   magic  "HDZ8"; "HDZ6" and "HDZ7" (formats 6 and 7) are still read  4 bytes
-//   ver    format version, 8 (6 or 7 for the older formats)   1 byte
+//   magic  "HDZ9"; "HDZ6", "HDZ7" and "HDZ8" (formats 6 to 8) are still read  4 bytes
+//   ver    format version, 9 (6, 7 or 8 for the older formats)   1 byte
 //   blkkib block size, KiB                     4 bytes
-//   flags  bit 0 recovery records follow their groups; bit 1 a directory    1 byte
+//   flags  bit 0 recovery records follow their groups; bit 1 a directory; bits 4 to 7
+//          the largest cm9 table less 16, so the decoder knows its memory    1 byte
 //   then records, each: rawlen (4), enclen (4), mode (1), CRC-32 (4), payload. Modes:
 //     0 stored, 1 LZ coded, 2 context mixed as format 6 (read only), 3 recovery,
 //     4 context mixed as format 7 (cm7), 5 DNA, 6 segment header,
-//     7 context mixed as format 8 (cm8), 8 audio (16-bit PCM), 0x7F end
+//     7 context mixed as format 8 (cm8), 8 audio (16-bit PCM),
+//     9 context mixed as format 9 (cm9), 10 a 16-bit picture, 11 a group's record (its
+//     primer and dictionary; raw length 0), 12 a block of a group, 13 deflate streams
+//     unwrapped in the bytes that follow (raw length 0), 0x7F end
 //   the end record's payload: the total of the data (8), its CRC-32 (4), the data
 //   blocks (4); segment headers and recovery records are not counted.
 //
@@ -49,11 +53,17 @@
 #include "stratazip.h"
 #include "sha256.h"
 #include "xorkernels.h"
+#include "cm9.h"
+#include "picture.h"
+#include "recompress.h"
 
 #include <QBuffer>
 #include <QElapsedTimer>
 #include <QStringList>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -74,6 +84,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <deque>
 #include <set>
 #include <atomic>
 #include <emmintrin.h>
@@ -99,13 +110,13 @@ const int       alpoff      = 3 + 32;                   // 3 repeat codes + 32 l
 const int       hshbit      = 17;                       // hash table size, bits
 const quint32   mlnmin      = 4;                        // shortest match the parser looks for
 const quint32   mlnrep      = 3;                        // shortest match on a repeat offset
-const char      arcmag[4]   = {'H', 'D', 'Z', '8'};     // archive magic (HDZ6 and HDZ7 still read)
-const quint8    arcver      = 8;                        // archive format version
+const char      arcmag[4]   = {'H', 'D', 'Z', '9'};     // archive magic (HDZ6, HDZ7 and HDZ8 still read)
+const quint8    arcver      = 9;                        // archive format version
 
-// The format an archive's header names: 6, 7 or 8, or 0 if it is not a StrataZip archive.
+// The format an archive's header names: 6, 7, 8 or 9, or 0 if it is not a StrataZip archive.
 inline int
 arcfmt(const quint8* h) {
-    if (h[0] != 'H' || h[1] != 'D' || h[2] != 'Z' || h[3] < '6' || h[3] > '8' || h[4] != h[3] - '0') return 0;
+    if (h[0] != 'H' || h[1] != 'D' || h[2] != 'Z' || h[3] < '6' || h[3] > '9' || h[4] != h[3] - '0') return 0;
     return h[4];
 }
 
@@ -2267,7 +2278,7 @@ cmraw(const std::vector<quint8>& d, int s, int s2, int lvl, bool inh, quint32 ms
     return o;
 }
 
-std::vector<quint8>
+[[maybe_unused]] std::vector<quint8>
 cmenc(const quint8* src, size_t len, int lvl) {
     // srdfnd reads only the start of its input, so the sample's answers are the block's.
     auto f0 = srdfnd(src, len);
@@ -3071,6 +3082,11 @@ like(const quint8* p, size_t n, size_t& hdr) {
 // stratazip::Archiver
 // ==============================================================================
 
+namespace {
+quint64 memavl();
+quint64 prdmem(int tb);
+} // namespace
+
 stratazip::Archiver::Archiver(
      int                                                        lvl
     ,int                                                        blkkib
@@ -3078,9 +3094,16 @@ stratazip::Archiver::Archiver(
     ,int                                                        rcv
 )
     : blkkib_(std::clamp(blkkib, 64, 1 << 20))
-    , lvl_(std::clamp(lvl, 1, 9))
+    , lvl_(std::clamp(lvl, 1, 10))
     , thr_(std::max(0, thr))
     , rcv_(std::clamp(rcv, 0, 100)) {
+    // The extreme level: the largest tables, to 24 bits, for which two models fit in
+    // 75% of the memory available (one coding, and a group's primer).
+    if (lvl_ >= 10) {
+        const quint64 bud = memavl() / 4 * 3;
+        tmx_ = 22;
+        for (int t = 24; t > 22; --t) if (bud >= 2 * prdmem(t)) { tmx_ = t; break; }
+    }
 }
 
 // ------------------------------------------------------------------------------
@@ -3239,6 +3262,10 @@ rcvmak(const std::vector<quint8>& g, quint64 gst, int pct) {
 // ------------------------------------------------------------------------------
 
 const quint8    modsgh      = 6;                        // record mode: a segment header
+const quint8    modgrp      = 11;                       // record mode: a group's primer and dictionary
+const quint8    modgbk      = 12;                       // record mode: a block of a group
+const quint8    moddfl      = 13;                       // record mode: deflate streams unwrapped in the bytes that follow
+const size_t    grpmax      = size_t(1) << 30;          // a group record's size, at most
 const quint8    flgrcv      = 1;                        // header flag: recovery records present
 const quint8    flgdir      = 2;                        // header flag: a directory archive
 const size_t    sghmax      = size_t(64) << 20;         // a segment header's size, at most
@@ -3300,42 +3327,310 @@ struct wrt {
     }
 };
 
-using encfn = std::function<std::vector<quint8>(const quint8*, size_t)>;
+// Already-compressed data: three samples of 64 KiB, each above 7.98 bits a byte of
+// order-0 entropy. Blocks under 4 KiB are left to the coders.
+bool
+dense(const quint8* p, size_t n) {
+    if (n < 4096) return false;
+    const size_t m = std::min<size_t>(n, 65536);
+    for (int k = 0; k < 3; ++k) {
+        const size_t a = (n - m) * size_t(2 * k + 1) / 6;
+        std::array<quint32, 256> c{};
+        for (size_t i = a; i < a + m; ++i) ++c[p[i]];
+        double h = 0;
+        for (quint32 v : c) if (v) { const double q = double(v) / double(m); h -= q * std::log2(q); }
+        if (h <= 7.98) return false;
+    }
+    return true;
+}
+
+using encfn = std::function<std::vector<quint8>(const quint8*, size_t, const stratazip::pic::geo&)>;
 using rdfn  = std::function<qint64(quint8*, qint64)>;   // fills up to n; fewer only at the end; -1 on error
+
+// What the blocks of an archive were coded as (the analysis made visible). By record
+// mode: blocks, bytes in, bytes out; and the last picture's geometry.
+using Stats = stratazip::Archiver::Stats;
 
 // Blocks from rd until it runs short, coded a batch at a time on every core, put out in
 // order. Returns the reason it stopped early, or nothing.
-QString
-datenc(wrt& w, const rdfn& rd, const encfn& enc, QThreadPool& pol, int nthr, size_t blklen, sms& s, const std::function<bool(quint64)>& prg) {
-    bool eof = false;
-    while (!eof) {
-        std::vector<std::vector<quint8>> raw;
-        while (int(raw.size()) < 2 * nthr) {
-            std::vector<quint8> b(blklen);
-            const qint64 n = rd(b.data(), qint64(blklen));
-            if (n < 0) return QStringLiteral("cannot read the input");
-            if (n == 0) { eof = true; break; }
-            b.resize(size_t(n));
-            raw.push_back(std::move(b));
-            if (size_t(n) < blklen) { eof = true; break; }
+//
+// The input is read a window at a time, two blocks' worth
+// per thread, and the window is looked at whole before it is cut. At the start of the
+// input the analysis asks whether it is a 16-bit picture; if so, the picture's blocks are
+// cut at whole rows (the first one carrying the header), so each block is a picture of
+// its own and the blocks stay independent, at almost no cost (x-ray as three blocks:
+// 0.04% over one stream). Each block is handed the geometry; the coders' trial decides.
+// Deflate streams unwrapped. The writer replaces each deflate stream zlib can
+// remake with its inflated bytes, before the window is cut into blocks, and puts a record
+// (mode 13) before the window's blocks saying where: for each stream, its place in the
+// bytes that follow the record (8), its deflated and inflated lengths (4 + 4), the zlib
+// setting (level and memory level, 1 + 1) and the CRC-32 of its deflated bytes (4), after
+// the count (4). The reader's inverter stands between the blocks and the output: it passes
+// bytes through, gathers each stream's inflated bytes, and deflates them again with the
+// bundled zlib, checking the length and the CRC.
+struct dinv {
+    struct ent { quint64 off; quint32 cln, uln; quint8 lvl, mem; quint32 crc; };
+    std::deque<ent>                                     q;
+    quint64                                             tps = 0;      // bytes of the blocks seen so far
+    std::vector<quint8>                                 ub;           // the inflated bytes of the stream being gathered
+    std::function<QString(const quint8*, size_t)>      out;
+    QString add(const quint8* p, size_t n) {
+        if (n < 4) return QStringLiteral("deflate record corrupt");
+        const quint32 c = rd32(p);
+        if (quint64(c) * 22 + 4 != n) return QStringLiteral("deflate record corrupt");
+        quint64 lst = q.empty() ? tps : q.back().off + q.back().uln;
+        for (quint32 k = 0; k < c; ++k) {
+            const quint8* e = p + 4 + size_t(k) * 22;
+            ent x{tps + rd64(e), rd32(e + 8), rd32(e + 12), e[16], e[17], rd32(e + 18)};
+            if (x.off < lst || x.uln == 0 || x.cln == 0 || x.uln > (1u << 31) || x.lvl < 1 || x.lvl > 9 || x.mem < 8 || x.mem > 9) return QStringLiteral("deflate record corrupt");
+            lst = x.off + x.uln;
+            q.push_back(x);
         }
-        std::vector<std::vector<quint8>> rcd(raw.size());
-        std::vector<quint32> bcr(raw.size());
-        std::vector<size_t> idx(raw.size());
+        return {};
+    }
+    QString feed(const quint8* p, size_t n) {
+        while (n) {
+            if (!q.empty() && tps >= q.front().off) {
+                const ent& e = q.front();
+                const size_t m = std::min<size_t>(n, e.uln - ub.size());
+                ub.insert(ub.end(), p, p + m);
+                tps += m; p += m; n -= m;
+                if (ub.size() == e.uln) {
+                    std::vector<quint8> c;
+                    if (!stratazip::dfl::rdf(ub.data(), ub.size(), e.lvl, e.mem, &c) || c.size() != e.cln || stratazip::dfl::crc(c.data(), c.size()) != e.crc)
+                        return QStringLiteral("a deflate stream did not come out as it went in");
+                    const QString r = out(c.data(), c.size());
+                    if (!r.isEmpty()) return r;
+                    ub.clear();
+                    q.pop_front();
+                }
+            } else {
+                const size_t m = q.empty() ? n : size_t(std::min<quint64>(n, q.front().off - tps));
+                const QString r = out(p, m);
+                if (!r.isEmpty()) return r;
+                tps += m; p += m; n -= m;
+            }
+        }
+        return {};
+    }
+    bool idle() const { return q.empty() && ub.empty(); }
+};
+
+// Memory. What the system says is available now (Linux's MemAvailable); 4 GiB when
+// it cannot say. And what one cm9 model takes at a table size: forty models' tables of
+// 4 bytes a slot, and about 25 MB of mixer, maps and match tables.
+quint64
+memavl() {
+    QFile f(QStringLiteral("/proc/meminfo"));
+    if (f.open(QIODevice::ReadOnly)) {
+        const QList<QByteArray> ls = f.readAll().split('\n');
+        for (const QByteArray& l : ls) if (l.startsWith("MemAvailable:")) {
+            const QList<QByteArray> w = l.simplified().split(' ');
+            if (w.size() >= 2) return w[1].toULongLong() * 1024;
+        }
+    }
+    return quint64(4) << 30;
+}
+
+quint64
+prdmem(int tb) { return quint64(40) * 4 * (quint64(1) << tb) + (quint64(25) << 20); }
+
+// Threads for the strong levels: use at most 75% of the memory available, so the
+// machine never runs out. One model a thread, and one more for the groups' primers.
+int
+thrmem(int want, int tb) {
+    const quint64 bud = memavl() / 4 * 3, per = prdmem(tb);
+    const qint64 fit = qint64(bud / per) - 1;
+    return int(std::max<qint64>(1, std::min<qint64>(want, fit)));
+}
+
+// Groups: at levels 7 and up, the blocks of a window that are alike are coded
+// as a group, sharing a primer and, for text, a word dictionary (cm9.h).
+// Alike means one cluster: each block's byte histogram and a 4,096-entry hashed table of
+// its byte pairs, as one unit vector; a block joins the first cluster whose first block it
+// matches at a cosine of 0.95 or more, or starts one. Measured on Silesia's starts and
+// middles: a file's start and middle 0.98 to 1.00 where their content matched,
+// no two different files above 0.885. A cluster of one block is coded alone.
+struct grpcfg {
+    int                                                lvl = 9;
+    int                                                tmx = 22;
+    std::function<bool(const quint8*, size_t)>        ok;           // may this block join a group?
+};
+
+std::vector<float>
+clsfea(const quint8* p, size_t n) {
+    const size_t m = std::min<size_t>(n, size_t(256) << 10), a = (n - m) / 2;
+    std::vector<float> v(256 + 4096, 0.0f);
+    for (size_t i = a; i < a + m; ++i) {
+        v[p[i]] += 1.0f;
+        if (i > a) v[256 + (((quint32(p[i - 1]) << 8 | p[i]) * 2654435761u) >> 20)] += 1.0f;
+    }
+    double t = 0;
+    for (float x : v) t += double(x) * x;
+    const float r = float(1.0 / std::sqrt(std::max(t, 1e-9)));
+    for (float& x : v) x *= r;
+    return v;
+}
+
+QString
+datenc(wrt& w, const rdfn& rd, const encfn& enc, QThreadPool& pol, int nthr, size_t blklen, sms& s, const std::function<bool(quint64)>& prg, Stats* st = nullptr, const grpcfg* gc = nullptr, bool dfz = true) {
+    // A window of a fixed sixteen blocks (four at the extreme level, whose blocks are
+    // large), however many threads there are: what the analysis and the deflate scan see,
+    // and which blocks may share a group, then never depend on the machine, so the same
+    // input makes the same archive on two cores or sixteen. It is also the batch the
+    // threads share, so up to sixteen blocks are coded at once.
+    const size_t win = blklen * size_t(gc && gc->lvl >= 10 ? 4 : 16);
+    (void)nthr;
+    int gid = 0;
+    std::vector<quint8> buf;                              // the window: bytes read, not yet cut
+    bool eof = false, fst = true;
+    stratazip::pic::geo pg;                                     // the picture the input is, if it is one
+    quint64 at = 0;                                       // bytes cut so far
+    size_t fr0 = 0;                                       // where the bytes not yet looked at for deflate streams begin
+    while (!eof || !buf.empty()) {
+        while (!eof && buf.size() < win) {
+            const size_t o = buf.size();
+            buf.resize(win);
+            const qint64 n = rd(buf.data() + o, qint64(win - o));
+            if (n < 0) return QStringLiteral("cannot read the input");
+            buf.resize(o + size_t(n));
+            if (size_t(n) < win - o) eof = true;
+        }
+        // Deflate streams: each that zlib remakes is replaced by its inflated bytes, and
+        // a record says where, before this window's blocks. Only bytes not looked at
+        // before, so nothing is unwrapped twice.
+        if (dfz && buf.size() > fr0) {
+            std::vector<std::vector<quint8>> ifl;
+            const std::vector<stratazip::dfl::ent> es = stratazip::dfl::scan(buf.data(), buf.size(), fr0, ifl);
+            if (!es.empty()) {
+                std::vector<quint8> nb, pay;
+                le32put(pay, quint32(es.size()));
+                size_t q = 0;
+                for (size_t k = 0; k < es.size(); ++k) {
+                    nb.insert(nb.end(), buf.begin() + std::ptrdiff_t(q), buf.begin() + std::ptrdiff_t(es[k].off));
+                    le64put(pay, nb.size()); le32put(pay, es[k].cln); le32put(pay, es[k].uln); pay.push_back(es[k].lvl); pay.push_back(es[k].mem); le32put(pay, es[k].crc);
+                    nb.insert(nb.end(), ifl[k].begin(), ifl[k].end());
+                    q = size_t(es[k].off) + es[k].cln;
+                    if (st) { ++st->dfn; st->dfc += es[k].cln; st->dfu += es[k].uln; }
+                }
+                nb.insert(nb.end(), buf.begin() + std::ptrdiff_t(q), buf.end());
+                buf = std::move(nb);
+                if (!w.rec(0, moddfl, pay) || !w.rcvchk()) return w.err;
+            }
+            fr0 = buf.size();
+        }
+        if (fst) {
+            fst = false;
+            if (!dense(buf.data(), buf.size())) pg = stratazip::pic::ana(buf.data(), buf.size(), eof);
+            if (pg.oky && st) { st->pwd = pg.wid; st->pbe = pg.bge; st->phd = pg.hdr; }
+        }
+        // Cut: whole blocks, and at the end whatever is left.
+        std::vector<std::pair<size_t, size_t>> cut;
+        std::vector<stratazip::pic::geo> geo;
+        size_t o = 0;
+        for (;;) {
+            size_t len = blklen;
+            stratazip::pic::geo g;
+            if (pg.oky) {
+                const size_t rb = 2 * size_t(pg.wid), h = at + o < pg.hdr ? pg.hdr - (at + o) : 0;
+                if (rb + h <= blklen) { len = h + (blklen - h) / rb * rb; g = pg; g.hdr = h; }
+            }
+            if (buf.size() - o < len) {
+                if (!eof || o == buf.size()) break;
+                len = buf.size() - o;
+            }
+            cut.push_back({o, len});
+            geo.push_back(g);
+            o += len;
+        }
+        if (cut.empty()) continue;
+        // The groups: clusters of two blocks or more among the blocks that may join one.
+        std::vector<int> gof(cut.size(), -1), gix(cut.size(), 0);
+        std::vector<std::vector<size_t>> grs;
+        if (gc && cut.size() >= 2) {
+            std::vector<size_t> cnd;
+            for (size_t i = 0; i < cut.size(); ++i) if (!geo[i].oky && cut[i].second >= (size_t(256) << 10) && gc->ok(buf.data() + cut[i].first, cut[i].second)) cnd.push_back(i);
+            std::vector<std::vector<float>> fea(cnd.size());
+            std::vector<size_t> ci(cnd.size());
+            for (size_t i = 0; i < ci.size(); ++i) ci[i] = i;
+            QtConcurrent::blockingMap(&pol, ci, [&](size_t i) { fea[i] = clsfea(buf.data() + cut[cnd[i]].first, cut[cnd[i]].second); });
+            std::vector<std::vector<size_t>> cls;
+            for (size_t i = 0; i < cnd.size(); ++i) {
+                size_t c = 0;
+                for (; c < cls.size(); ++c) {
+                    double d = 0;
+                    const std::vector<float>& a = fea[cls[c][0]];
+                    for (size_t j = 0; j < a.size(); ++j) d += double(a[j]) * fea[i][j];
+                    if (d >= 0.95) break;
+                }
+                if (c == cls.size()) cls.emplace_back();
+                cls[c].push_back(i);
+            }
+            for (const auto& c : cls) {
+                if (c.size() < 2) continue;
+                grs.emplace_back();
+                for (size_t k = 0; k < c.size(); ++k) { gof[cnd[c[k]]] = int(grs.size() - 1); gix[cnd[c[k]]] = int(k); grs.back().push_back(cnd[c[k]]); }
+            }
+        }
+        // Each group's plan and primer, the groups in parallel.
+        struct gwk { stratazip::cm9::gpl pl; stratazip::cm9::gpr pr; std::vector<quint8> rec; int id = 0; };
+        std::vector<gwk> gws(grs.size());
+        for (size_t g = 0; g < gws.size(); ++g) { gws[g].id = gid; gid = (gid + 1) & 255; }
+        {
+            std::vector<size_t> gi(grs.size());
+            for (size_t g = 0; g < gi.size(); ++g) gi[g] = g;
+            QtConcurrent::blockingMap(&pol, gi, [&](size_t g) {
+                std::vector<std::pair<const quint8*, size_t>> bl;
+                for (size_t i : grs[g]) bl.push_back({buf.data() + cut[i].first, cut[i].second});
+                gws[g].pl = stratazip::cm9::gplan(bl, gc->lvl, gc->tmx, blklen / 16);
+                gws[g].pr = stratazip::cm9::gpren(gws[g].pl);
+                const std::vector<quint8> pay = stratazip::cm9::gput(gws[g].pl, gws[g].pr);
+                std::vector<quint8> pl(1, quint8(gws[g].id));
+                pl.insert(pl.end(), pay.begin(), pay.end());
+                std::vector<quint8>& r = gws[g].rec;
+                le32put(r, 0); le32put(r, quint32(pl.size())); r.push_back(modgrp); le32put(r, stratazip::Archiver::crc32(pl.data(), pl.size()));
+                r.insert(r.end(), pl.begin(), pl.end());
+            });
+        }
+        std::vector<std::vector<quint8>> rcd(cut.size());
+        std::vector<quint32> bcr(cut.size());
+        std::vector<size_t> idx(cut.size());
         for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
         QtConcurrent::blockingMap(&pol, idx, [&](size_t i) {
-            const std::vector<quint8> e = enc(raw[i].data(), raw[i].size());
-            const quint32 c = bcr[i] = stratazip::Archiver::crc32(raw[i].data(), raw[i].size());
-            std::vector<quint8> r(e.begin(), e.begin() + 9);
-            le32put(r, c);
-            r.insert(r.end(), e.begin() + 9, e.end());
+            const quint8* p = buf.data() + cut[i].first;
+            const quint32 c = bcr[i] = stratazip::Archiver::crc32(p, cut[i].second);
+            std::vector<quint8> r;
+            if (gof[i] >= 0) {
+                const gwk& g = gws[size_t(gof[i])];
+                const std::vector<quint8> b = stratazip::cm9::gblen(g.pl, *g.pr.pr, size_t(gix[i]));
+                le32put(r, quint32(cut[i].second)); le32put(r, quint32(b.size() + 1)); r.push_back(modgbk); le32put(r, c);
+                r.push_back(quint8(g.id));
+                r.insert(r.end(), b.begin(), b.end());
+            } else {
+                const std::vector<quint8> e = enc(p, cut[i].second, geo[i]);
+                r.assign(e.begin(), e.begin() + 9);
+                le32put(r, c);
+                r.insert(r.end(), e.begin() + 9, e.end());
+            }
             rcd[i] = std::move(r);
         });
-        for (size_t i = 0; i < raw.size(); ++i) {
+        std::vector<bool> gdn(grs.size(), false);
+        for (size_t i = 0; i < cut.size(); ++i) {
+            if (gof[i] >= 0 && !gdn[size_t(gof[i])]) {         // a group's record goes before its first block
+                gdn[size_t(gof[i])] = true;
+                const std::vector<quint8>& g = gws[size_t(gof[i])].rec;
+                if (!w.put(g)) return w.err;
+                if (st) { ++st->cnt[modgrp]; st->enc[modgrp] += g.size(); }
+                if (!w.rcvchk()) return w.err;
+            }
             if (!w.put(rcd[i])) return w.err;
-            s.add(bcr[i], raw[i].size());
+            s.add(bcr[i], cut[i].second);
+            if (st) { const quint8 md = rcd[i][8] & 15; ++st->cnt[md]; st->raw[md] += cut[i].second; st->enc[md] += rcd[i].size(); }
             if (!w.rcvchk()) return w.err;
         }
+        at += o;
+        buf.erase(buf.begin(), buf.begin() + std::ptrdiff_t(o));
+        fr0 -= std::min(fr0, o);
         if (prg && !prg(s.tot)) return QStringLiteral("stopped");
     }
     return {};
@@ -3635,7 +3930,7 @@ basld(const QString& pth, bas& b, const std::function<std::vector<quint8>(quint8
                 if (!x.dedup) own.insert(key(x.sha256sum));
                 else if (!own.count(key(x.sha256sum))) cur->ext.push_back(key(x.sha256sum));
             }
-        } else if (mod != modrcv) {
+        } else if (mod != modrcv && mod != modgrp && mod != moddfl) {
             if (!cur) return QStringLiteral("data before any segment header");
             cur->sum.add(crc, rawlen);
         }
@@ -3668,6 +3963,10 @@ stratazip::Archiver::rawdec(
         if (!aud::dec(src, len, rawlen, raw)) err = "audio block corrupt";
     } else if (mod == 7) {                                  // format 8's
         if (len < 1 || src[0] < 7 || src[0] > 9 || !cm8::cmdec(src + 1, len - 1, rawlen, src[0], raw)) err = "context-mixed block corrupt";
+    } else if (mod == 9) {                                  // format 9's (cm9), levels 7 to 10
+        if (len < 1 || src[0] < 7 || src[0] > 10 || !stratazip::cm9::cmdec(src + 1, len - 1, rawlen, src[0], raw)) err = "context-mixed block corrupt";
+    } else if (mod == 10) {                                 // the picture coder
+        if (!pic::dec(src, len, rawlen, raw)) err = "picture block corrupt";
     } else if (mod == 5) {                                  // format 7's DNA
         if (!dna::dec(src, len, rawlen, raw)) err = "DNA block corrupt";
     } else if (mod == 1) {
@@ -3692,14 +3991,30 @@ stratazip::Archiver::recdec(
     if (!v6 && !v7) { res.message = "not a StrataZip archive"; return res; }
     const quint32 blkkib = rd32(&h[5]);
     const quint8  flg    = h[9];
-    if (blkkib < 64 || blkkib > (1u << 20) || (flg & ~(v6 ? flgrcv : flgrcv | flgdir))) { res.message = "bad archive header"; return res; }
+    if (blkkib < 64 || blkkib > (1u << 20) || (flg & ~(v6 ? flgrcv : (fm >= 9 ? 0xF0 | flgrcv | flgdir : flgrcv | flgdir)))) { res.message = "bad archive header"; return res; }
+    // The largest table the archive's blocks use, from the header; the decoder needs
+    // as much memory a thread as the encoder did, and fewer threads when memory is short.
+    // It refuses, up front, only when even one thread would not fit in all the memory
+    // available (a model and a group's primer): the encoder chose its tables to fit in 75%,
+    // so on the machine that made the archive there is a third to spare.
+    const int     tbx    = fm >= 9 && (flg >> 4) ? 16 + (flg >> 4) : 22;
+    if (tbx > 22 && memavl() < 2 * prdmem(tbx)) {
+        res.message = QString("this archive was made at the extreme level and needs about %1 GB of free memory to decode; %2 GB are available")
+                       .arg(double(2 * prdmem(tbx)) / 1e9, 0, 'f', 1).arg(double(memavl()) / 1e9, 0, 'f', 1);
+        return res;
+    }
     const bool    dir    = flg & flgdir;
     if (knd == 1 && dir)  { res.message = "this archive holds a directory: decompress it into a directory"; return res; }
     if (knd == 2 && !dir) { res.message = "this archive holds one file, not a directory"; return res; }
     const size_t  blkmax = size_t(blkkib) * 1024;
 
-    struct blk { bool end = false, sgh = false, skp = false; quint32 rawlen = 0; quint8 mod = 0; quint32 crc = 0; std::vector<quint8> src, raw; QString err; };
-    const int     nthr = thr_ ? thr_ : std::max(1, QThread::idealThreadCount());
+    struct blk { bool end = false, sgh = false, skp = false, grp = false, dfr = false; quint32 rawlen = 0; quint8 mod = 0; quint32 crc = 0; std::vector<quint8> src, raw; QString err;
+                 std::shared_ptr<stratazip::cm9::gst> gs; };
+    std::map<int, std::shared_ptr<stratazip::cm9::gst>> grp;   // the groups being decoded, by number
+    std::map<int, size_t> gleft;                          // and how many of their blocks are still to come
+    dinv          inv;                                    // deflate streams made again on the way out
+    inv.out = [&](const quint8* p, size_t n) { std::vector<quint8> v(p, p + n); return dat(v); };
+    const int     nthr = thrmem(thr_ ? thr_ : std::max(1, QThread::idealThreadCount()), tbx);   // at least one
     QThreadPool   pol;
     pol.setMaxThreadCount(nthr);
     sms           sum;
@@ -3722,6 +4037,12 @@ stratazip::Archiver::recdec(
             if (b.mod == modsgh) {
                 if (!dir || b.rawlen == 0 || b.rawlen > sghmax || enclen < 1 || enclen > sghmax + 64) { res.message = "bad segment header record"; return res; }
                 b.sgh = true;
+            } else if (b.mod == modgrp) {
+                if (fm < 9 || b.rawlen != 0 || enclen < 2 || enclen > grpmax) { res.message = "bad group record"; return res; }
+                b.grp = true;
+            } else if (b.mod == moddfl) {
+                if (fm < 9 || b.rawlen != 0 || enclen < 4 || enclen > (64u << 20)) { res.message = "bad deflate record"; return res; }
+                b.dfr = true;
             } else if (b.rawlen > blkmax || enclen > blkmax + 64) { res.message = QString("block %1: bad record header").arg(sum.cnt + bat.size()); return res; }
             if (!b.sgh && b.mod != modend && !dat) {       // listing: the data is not wanted
                 if (in.skip(enclen) != qint64(enclen)) { res.message = "archive truncated in a block"; return res; }
@@ -3738,15 +4059,50 @@ stratazip::Archiver::recdec(
             }
             bat.push_back(std::move(b));
         }
+        // The batch's group records first, in parallel; each block of a group then
+        // starts from its group's model.
         QtConcurrent::blockingMap(&pol, bat, [&](blk& b) {
-            if (b.end || b.skp) return;
+            if (!b.grp || b.skp) return;
+            if (crc32(b.src.data(), b.src.size()) != b.crc) { b.err = "group record corrupt"; return; }
+            b.gs = std::make_shared<stratazip::cm9::gst>();
+            if (!stratazip::cm9::gget(b.src.data() + 1, b.src.size() - 1, *b.gs)) { b.gs.reset(); b.err = "group record corrupt"; }
+        });
+        for (blk& b : bat) {
+            if (b.grp && !b.skp) {
+                if (!b.err.isEmpty()) { res.message = QString("before block %1: %2").arg(sum.cnt).arg(b.err); return res; }
+                grp[b.src[0]] = b.gs; gleft[b.src[0]] = b.gs->sl.size(); b.gs.reset();
+            }
+            if (b.mod == modgbk && !b.skp && !b.src.empty()) {
+                const auto g = grp.find(b.src[0]);
+                if (g != grp.end()) b.gs = g->second;
+            }
+        }
+        QtConcurrent::blockingMap(&pol, bat, [&](blk& b) {
+            if (b.end || b.skp || b.grp) return;
             if (b.sgh) b.raw = rawdec(b.src[0], b.src.data() + 1, b.src.size() - 1, b.rawlen, b.err);   // a header: its own mode first
+            else if (b.mod == modgbk) {
+                if (!b.gs) { b.err = "a block of a group whose record is missing"; return; }
+                if (!stratazip::cm9::gbdec(*b.gs, b.src.data() + 1, b.src.size() - 1, b.rawlen, b.raw)) { b.err = "grouped block corrupt"; return; }
+            }
             else       b.raw = rawdec(b.mod, b.src.data(), b.src.size(), b.rawlen, b.err);
             if (!b.err.isEmpty()) return;
             if (b.raw.size() != b.rawlen || crc32(b.raw.data(), b.raw.size()) != b.crc) b.err = "CRC mismatch: the block is corrupt";
         });
         for (blk& b : bat) {
+            if (b.grp) continue;
+            if (b.dfr) {
+                if (b.skp) continue;
+                if (crc32(b.src.data(), b.src.size()) != b.crc) { res.message = "deflate record corrupt"; return res; }
+                const QString e = inv.add(b.src.data(), b.src.size());
+                if (!e.isEmpty()) { res.message = e; return res; }
+                continue;
+            }
+            if (b.mod == modgbk && b.gs && !b.src.empty()) {   // the group's model goes with its last block
+                b.gs.reset();
+                if (--gleft[b.src[0]] == 0) { grp.erase(b.src[0]); gleft.erase(b.src[0]); }
+            }
             if (b.end) {
+                if (!inv.idle()) { res.message = "a deflate stream is cut short"; return res; }
                 if (rd64(b.src.data()) != sum.tot || rd32(b.src.data() + 8) != sum.crc || rd32(b.src.data() + 12) != quint32(sum.cnt)) { res.message = "totals do not match: blocks are missing"; return res; }
                 break;
             }
@@ -3757,7 +4113,7 @@ stratazip::Archiver::recdec(
                 continue;
             }
             if (!b.skp) {
-                const QString e = dat(b.raw);
+                const QString e = inv.idle() ? (inv.tps += b.raw.size(), dat(b.raw)) : inv.feed(b.raw.data(), b.raw.size());
                 if (!e.isEmpty()) { res.message = e; return res; }
             }
             sum.add(b.crc, b.rawlen);
@@ -3786,18 +4142,20 @@ stratazip::Archiver::compressStream(
     ,const std::function<bool(quint64)>&                        prg
 ) const {
     Result res;
-    const int     nthr   = thr_ ? thr_ : std::max(1, QThread::idealThreadCount());
+    kst_ = Stats();
+    const int     nthr   = lvl_ >= 7 ? thrmem(thr_ ? thr_ : std::max(1, QThread::idealThreadCount()), tmx_) : (thr_ ? thr_ : std::max(1, QThread::idealThreadCount()));
     QThreadPool   pol;
     pol.setMaxThreadCount(nthr);
     wrt           w{out, rcv_, {}, 0, 0, {}};
     std::vector<quint8> hdr(arcmag, arcmag + 4);
     hdr.push_back(arcver);
     le32put(hdr, quint32(blkkib_));
-    hdr.push_back(rcv_ ? flgrcv : 0);
+    hdr.push_back(quint8((rcv_ ? flgrcv : 0) | (lvl_ >= 7 ? (tmx_ - 16) << 4 : 0)));
     if (!w.put(hdr)) { res.message = w.err; return res; }
     sms sum;
-    const QString e = datenc(w, [&](quint8* p, qint64 n) { return rdful(in, p, n); }, [this](const quint8* p, size_t n) { return blkenc(p, n); },
-                             pol, nthr, size_t(blkkib_) * 1024, sum, prg);
+    const grpcfg gc{lvl_, tmx_, [this](const quint8* p, size_t n) { return (all_ || lvl_ >= 10 || !dense(p, n)) && [&] { size_t h = 0; return !aud::like(p, n, h); }() && !dna::like(p, n); }};
+    const QString e = datenc(w, [&](quint8* p, qint64 n) { return rdful(in, p, n); }, [this](const quint8* p, size_t n, const stratazip::pic::geo& g) { return blkenc(p, n, g); },
+                             pol, nthr, size_t(blkkib_) * 1024, sum, prg, &kst_, lvl_ >= 7 ? &gc : nullptr);
     if (!e.isEmpty()) { res.message = e; return res; }
     if (!w.end(sum)) { res.message = w.err; return res; }
     res.ok = true;
@@ -3868,8 +4226,30 @@ stratazip::Archiver::extractFile(
     if (sk) { if (!in.seek(sgat[tl.sg])) { res.message = "cannot seek"; return res; } pos = sgat[tl.sg]; }
     else if (tl.sg + 1 != sgat.size()) { res.message = "the content is in an earlier segment: the archive must be a file, not a pipe"; return res; }
     else if (pos != sgat[tl.sg]) { res.message = "cannot reach the file's blocks from a pipe"; return res; }   // headers read past it
-    quint64 at = 0, rem = tgt.size, beg = tl.off;
+    quint64 at = 0, rem = tgt.size;
+    const quint64 beg = tl.off;
     sha::sha256ctx hc;
+    // Group records are kept as they come, and decoded only when a block the file
+    // needs belongs to one.
+    std::map<int, std::vector<quint8>> gpn;
+    std::map<int, std::shared_ptr<stratazip::cm9::gst>> gdc;
+    // Once a deflate record is met, blocks are decoded from there on through the
+    // inverter, and positions counted in the original bytes (oat) rather than the blocks'.
+    dinv dv;
+    bool act = false;
+    quint64 oat = 0;
+    QString wer;
+    auto take = [&](const quint8* p, size_t n) -> QString {     // original bytes from oat on
+        const quint64 a0 = std::max(oat, beg), a1 = std::min(oat + n, beg + tgt.size);
+        if (a1 > a0) {
+            hc.add(p + (a0 - oat), size_t(a1 - a0));
+            if (!wrful(out, p + (a0 - oat), size_t(a1 - a0))) return "cannot write the output: " + out.errorString();
+            rem -= a1 - a0;
+        }
+        oat += n;
+        return {};
+    };
+    dv.out = take;
     while (rem) {
         std::array<quint8, rechdr> r;
         if (rdful(in, r.data(), qint64(rechdr)) != qint64(rechdr)) { res.message = "archive truncated"; return res; }
@@ -3878,20 +4258,190 @@ stratazip::Archiver::extractFile(
         const quint8 mod = r[8];
         if (mod == modrcv) { if (!skip(enclen)) { res.message = "archive truncated"; return res; } continue; }
         if (mod == modsgh || mod == modend) { res.message = "the segment ends before the file does"; return res; }
+        if (mod == modgrp || mod == moddfl) {
+            if (rawlen != 0 || enclen < 2 || enclen > grpmax) { res.message = "bad record header"; return res; }
+            std::vector<quint8> c(enclen);
+            if (rdful(in, c.data(), enclen) != qint64(enclen) || crc32(c.data(), c.size()) != crc) { res.message = mod == modgrp ? "group record corrupt" : "deflate record corrupt"; return res; }
+            pos += enclen;
+            if (mod == moddfl) {
+                const QString e = dv.add(c.data(), c.size());
+                if (!e.isEmpty()) { res.message = e; return res; }
+                act = true;
+                continue;
+            }
+            gdc.erase(c[0]);
+            gpn[c[0]] = std::move(c);
+            continue;
+        }
         if (rawlen > blkmax || enclen > blkmax + 64) { res.message = "bad record header"; return res; }
-        if (at + rawlen <= beg) { if (!skip(enclen)) { res.message = "archive truncated"; return res; } at += rawlen; continue; }
+        if (!act && oat + rawlen <= beg) {               // before the file, and nothing unwrapped: passed over
+            if (!skip(enclen)) { res.message = "archive truncated"; return res; }
+            at += rawlen; oat += rawlen; dv.tps += rawlen;
+            continue;
+        }
         std::vector<quint8> c(enclen);
         if (rdful(in, c.data(), enclen) != qint64(enclen)) { res.message = "archive truncated"; return res; }
         pos += enclen;
         QString er;
-        const std::vector<quint8> d = rawdec(mod, c.data(), c.size(), rawlen, er);
+        std::vector<quint8> d;
+        if (mod == modgbk) {
+            if (c.empty()) { res.message = "a block of the file is corrupt"; return res; }
+            auto g = gdc.find(c[0]);
+            if (g == gdc.end()) {
+                const auto pn = gpn.find(c[0]);
+                if (pn == gpn.end()) { res.message = "a block of a group whose record is missing"; return res; }
+                auto gs = std::make_shared<stratazip::cm9::gst>();
+                if (!stratazip::cm9::gget(pn->second.data() + 1, pn->second.size() - 1, *gs)) { res.message = "group record corrupt"; return res; }
+                g = gdc.emplace(c[0], gs).first;
+            }
+            if (!stratazip::cm9::gbdec(*g->second, c.data() + 1, c.size() - 1, rawlen, d)) er = "grouped block corrupt";
+        } else d = rawdec(mod, c.data(), c.size(), rawlen, er);
         if (!er.isEmpty() || d.size() != rawlen || crc32(d.data(), d.size()) != crc) { res.message = "a block of the file is corrupt"; return res; }
-        const size_t s0 = size_t(beg > at ? beg - at : 0), n = size_t(std::min<quint64>(rem, rawlen - s0));
-        hc.add(d.data() + s0, n);
-        if (!wrful(out, d.data() + s0, n)) { res.message = "cannot write the output: " + out.errorString(); return res; }
-        rem -= n; at += rawlen; beg = at;
+        at += rawlen;
+        const QString e = dv.idle() ? (dv.tps += d.size(), take(d.data(), d.size())) : dv.feed(d.data(), d.size());
+        if (!e.isEmpty()) { res.message = e; return res; }
     }
     if (hc.fin() != tgt.sha256sum) { res.message = "SHA-256 mismatch: the file is not what was archived"; return res; }
+    res.ok = true;
+    return res;
+}
+
+stratazip::Archiver::Result
+stratazip::Archiver::archiveInfo(
+     QIODevice&                                                 in
+    ,QStringList&                                               out
+    ,QByteArray*                                                jsn
+) {
+    Result res;
+    std::array<quint8, 10> h;
+    if (rdful(in, h.data(), 10) != 10) { res.message = "not a StrataZip archive: too short"; return res; }
+    const int fm = arcfmt(h.data());
+    if (!fm) { res.message = "not a StrataZip archive"; return res; }
+    const quint32 blkkib = rd32(&h[5]);
+    const quint8 flg = h[9];
+    out << QString("format HDZ%1, blocks of %2 KiB%3%4%5").arg(fm).arg(blkkib)
+               .arg(flg & flgdir ? ", a directory" : ", one stream")
+               .arg(flg & flgrcv ? ", with recovery records" : "")
+               .arg(fm >= 9 && (flg >> 4) ? QString(", strong-level tables of 2^%1 slots").arg(16 + (flg >> 4)) : QString());
+    static const char* nam[16] = {"stored", "LZ", "context-mixed (cm, format 6)", "recovery", "context-mixed (cm7)", "DNA", "segment header", "context-mixed (cm8)",
+                                  "audio", "context-mixed (cm9)", "picture", "group record", "grouped", "deflate record", "", ""};
+    std::array<quint64, 16> cnt{}, raw{}, enc{};
+    quint64 lzf[4] = {0, 0, 0, 0}, cmf[6] = {0, 0, 0, 0, 0, 0}, mskn = 0, msks = 0, dfn = 0, gbk = 0, wrdg = 0;
+    std::map<int, int> wid;
+    QString tail;
+    quint64 etot = 0, ecnt = 0;
+    QJsonArray mbs;
+    const Archiver dz;
+    for (;;) {
+        std::array<quint8, rechdr> r;
+        if (rdful(in, r.data(), qint64(rechdr)) != qint64(rechdr)) { res.message = "archive truncated: no end record"; return res; }
+        const quint32 rawlen = rd32(&r[0]), enclen = rd32(&r[4]);
+        const quint8 mod = r[8];
+        if (enclen > (1u << 30)) { res.message = "bad record header"; return res; }
+        // The first 64 bytes of each record are enough, but for a picture's, whose width
+        // follows its header bytes, and, for JSON, a segment header's, which lists members.
+        if (mod == modsgh && jsn) {
+            if (enclen < 1 || enclen > sghmax + 64 || rawlen > sghmax) { res.message = "bad segment header record"; return res; }
+            std::vector<quint8> c(enclen);
+            if (rdful(in, c.data(), enclen) != qint64(enclen)) { res.message = "archive truncated"; return res; }
+            QString er;
+            const std::vector<quint8> pl = dz.rawdec(c[0], c.data() + 1, c.size() - 1, rawlen, er);
+            std::vector<Member> m;
+            if (!er.isEmpty() || pl.size() != rawlen || crc32(pl.data(), pl.size()) != rd32(&r[9]) || !sghget(pl, m)) { res.message = "segment header corrupt"; return res; }
+            for (const Member& x : m) {
+                QJsonObject o;
+                o["path"] = QString::fromUtf8(x.path);
+                o["kind"] = x.kind == Directory ? "directory" : x.kind == Link ? "link" : "file";
+                o["mode"] = QString::number(x.mode, 8);
+                o["mtime"] = QDateTime::fromMSecsSinceEpoch(x.mtime / 1000000).toUTC().toString(Qt::ISODateWithMs);
+                if (x.kind == File) {
+                    o["size"] = double(x.size);
+                    o["sha256"] = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(x.sha256sum.data()), 32).toHex());
+                    if (x.dedup) o["stored_once_with_an_earlier_file"] = true;
+                }
+                if (x.kind == Link) o["target"] = QString::fromUtf8(x.target);
+                mbs.append(o);
+            }
+            ++cnt[6]; raw[6] += rawlen; enc[6] += rechdr + enclen;
+            continue;
+        }
+        std::vector<quint8> p(std::min<quint32>(enclen, 64));
+        if (rdful(in, p.data(), qint64(p.size())) != qint64(p.size())) { res.message = "archive truncated"; return res; }
+        if (mod == 10 && p.size() >= 4 && enclen > p.size()) {
+            const size_t want = std::min<size_t>(enclen, size_t(rd32(p.data())) + 8), o = p.size();
+            if (want > o) { p.resize(want); if (rdful(in, p.data() + o, qint64(want - o)) != qint64(want - o)) { res.message = "archive truncated"; return res; } }
+        }
+        if (enclen > p.size() && in.skip(enclen - p.size()) != qint64(enclen - p.size())) { res.message = "archive truncated"; return res; }
+        if (mod == modend) {
+            etot = enclen >= 16 ? rd64(p.data()) : 0; ecnt = enclen >= 16 ? rd32(p.data() + 12) : 0;
+            tail = QString("end: %1 bytes in %2 data blocks, checked by the CRC-32 of each and of the whole").arg(etot).arg(ecnt);
+            break;
+        }
+        const int m = mod & 15;
+        ++cnt[size_t(m)]; raw[size_t(m)] += rawlen; enc[size_t(m)] += rechdr + enclen;
+        if (mod == 1 && p.size() >= 1 && p[0] <= 3) ++lzf[p[0]];
+        if (mod == 9 && p.size() >= 18) {                // level, then cm9's settings
+            const int wb = p[3];
+            if (wb & 0x40) ++cmf[0];
+            if ((wb & 0x3f) & 15) ++cmf[1];
+            if (wb & 0x80) ++cmf[2];
+            if (wb & 0x20) ++cmf[3];
+            quint64 mk = 0; for (int k = 0; k < 8; ++k) mk |= quint64(p[8 + k]) << (8 * k);
+            mskn += quint64(__builtin_popcountll(mk)); ++msks;
+            if (p[16] & 2) ++cmf[4];
+        }
+        if (mod == 10 && p.size() >= 4) {
+            const quint32 hl = rd32(p.data());
+            if (hl + 8 <= p.size()) ++wid[int(rd32(p.data() + 4 + hl))]; else ++wid[0];
+        }
+        if (mod == 11 && p.size() >= 20) { gbk += quint64(p[2]) | quint64(p[3]) << 8; if (p[19] & 2) ++wrdg; }   // gid, level, count, then the settings: flags at 19
+        if (mod == 13 && p.size() >= 4) dfn += rd32(p.data());
+    }
+    for (int m = 0; m < 16; ++m) {
+        if (!cnt[size_t(m)]) continue;
+        QString l = QString("%1: %2 record(s)").arg(nam[m]).arg(cnt[size_t(m)]);
+        if (raw[size_t(m)]) l += QString(", %1 -> %2 bytes (%3%)").arg(raw[size_t(m)]).arg(enc[size_t(m)]).arg(100.0 * double(enc[size_t(m)]) / double(raw[size_t(m)]), 0, 'f', 1);
+        else l += QString(", %1 bytes").arg(enc[size_t(m)]);
+        if (m == 1 && (lzf[1] + lzf[2] + lzf[3])) l += QString("; filters: %1 derivative, %2 x86").arg(lzf[1] + lzf[2]).arg(lzf[3]);
+        if (m == 9) l += QString("; %1 inheriting, filters: %2 word, %3 x86, %4 picture; %5 in the word dictionary's codes; %6 models left out a block on average")
+                             .arg(cmf[0]).arg(cmf[1]).arg(cmf[2]).arg(cmf[3]).arg(cmf[4]).arg(msks ? double(mskn) / double(msks) : 0.0, 0, 'f', 1);
+        if (m == 10) { QStringList w; for (auto [k, v] : wid) w << QString("%1 wide x%2").arg(k).arg(v); l += "; " + w.join(", "); }
+        if (m == 11) l += QString("; %1 blocks in them; %2 with a word dictionary").arg(gbk).arg(wrdg);
+        if (m == 13) l += QString("; %1 deflate stream(s) unwrapped").arg(dfn);
+        out << l;
+    }
+    out << tail;
+    if (jsn) {
+        QJsonObject j, cm, gr;
+        j["format"] = QString("HDZ%1").arg(fm);
+        j["block_kib"] = double(blkkib);
+        j["directory"] = bool(flg & flgdir);
+        j["recovery_records"] = bool(flg & flgrcv);
+        if (fm >= 9 && (flg >> 4)) j["table_bits"] = 16 + (flg >> 4);
+        j["bytes"] = double(etot);
+        j["data_blocks"] = double(ecnt);
+        quint64 ab = 10;
+        QJsonArray cs;
+        for (int m = 0; m < 16; ++m) {
+            ab += enc[size_t(m)];
+            if (!cnt[size_t(m)]) continue;
+            QJsonObject c;
+            c["mode"] = m; c["coder"] = nam[m]; c["records"] = double(cnt[size_t(m)]); c["bytes_in"] = double(raw[size_t(m)]); c["bytes_out"] = double(enc[size_t(m)]);
+            cs.append(c);
+        }
+        j["archive_bytes"] = double(ab + rechdr + 16);
+        j["coders"] = cs;
+        if (cnt[9]) {
+            cm["inheriting"] = double(cmf[0]); cm["word_filter"] = double(cmf[1]); cm["x86_filter"] = double(cmf[2]); cm["picture_filter"] = double(cmf[3]);
+            cm["word_dictionary"] = double(cmf[4]); cm["models_left_out_per_block"] = msks ? double(mskn) / double(msks) : 0.0;
+            j["context_mixed"] = cm;
+        }
+        if (!wid.empty()) { QJsonArray pa; for (auto [k, v] : wid) { QJsonObject o; o["width"] = k; o["blocks"] = v; pa.append(o); } j["pictures"] = pa; }
+        if (cnt[11]) { gr["groups"] = double(cnt[11]); gr["blocks"] = double(gbk); gr["with_word_dictionary"] = double(wrdg); j["groups"] = gr; }
+        if (dfn) j["deflate_streams"] = double(dfn);
+        if (flg & flgdir) j["members"] = mbs;
+        *jsn = QJsonDocument(j).toJson(QJsonDocument::Indented);
+    }
     res.ok = true;
     return res;
 }
@@ -3920,8 +4470,9 @@ stratazip::Archiver::compressDirectory(
     DirStats          own;
     DirStats&         d      = s ? *s : own;
     d = DirStats();
+    kst_ = Stats();
     if (!QFileInfo(root).isDir()) { res.message = "not a directory: " + root; return res; }
-    const int     nthr   = thr_ ? thr_ : std::max(1, QThread::idealThreadCount());
+    const int     nthr   = lvl_ >= 7 ? thrmem(thr_ ? thr_ : std::max(1, QThread::idealThreadCount()), tmx_) : (thr_ ? thr_ : std::max(1, QThread::idealThreadCount()));
     const size_t  blklen = size_t(blkkib_) * 1024;
     QThreadPool   pol;
     pol.setMaxThreadCount(nthr);
@@ -3964,12 +4515,13 @@ stratazip::Archiver::compressDirectory(
     std::vector<quint8> hdr(arcmag, arcmag + 4);
     hdr.push_back(arcver);
     le32put(hdr, quint32(blkkib_));
-    hdr.push_back(quint8(flgdir | (rcv_ ? flgrcv : 0)));
+    hdr.push_back(quint8(flgdir | (rcv_ ? flgrcv : 0) | (lvl_ >= 7 ? (tmx_ - 16) << 4 : 0)));
     if (!w.put(hdr)) { res.message = w.err; return res; }
 
     sms sum;
     std::set<QByteArray> avl;                             // content the archive holds so far
-    const encfn enc = [this](const quint8* p, size_t n) { return blkenc(p, n); };
+    const encfn enc = [this](const quint8* p, size_t n, const stratazip::pic::geo& g) { return blkenc(p, n, g); };
+    const grpcfg gc{lvl_, tmx_, [this](const quint8* p, size_t n) { return (all_ || lvl_ >= 10 || !dense(p, n)) && [&] { size_t h = 0; return !aud::like(p, n, h); }() && !dna::like(p, n); }};
     for (const auto& [a, z] : sgmcut(m, 4 * quint64(blklen))) {     // blocks are coded alone, so a segment costs only its part-filled last block
         const std::vector<quint8> pay = sghput(m, a, z);
         // Unchanged since the base: its records copied as they are, still compressed.
@@ -4025,7 +4577,7 @@ stratazip::Archiver::compressDirectory(
             }
             return got;
         };
-        e = datenc(w, rd, enc, pol, nthr, blklen, sum, prg);
+        e = datenc(w, rd, enc, pol, nthr, blklen, sum, prg, &kst_, lvl_ >= 7 ? &gc : nullptr);
         if (!e.isEmpty()) { res.message = rer.isEmpty() ? e : rer; return res; }
         ++d.segmentsCoded;
     }
@@ -4381,7 +4933,49 @@ std::vector<quint8>
 stratazip::Archiver::blkenc(
      const quint8*                                              src
     ,size_t                                                     len
+    ,const pic::geo&                                            geo
 ) const {
+    // Already compressed: data whose bytes are as unpredictable as noise (zip, xz, 7z and
+    // other archives, encrypted or random data) is stored as it is, without trying a coder,
+    // at levels 1 to 9. The test is the order-0 entropy of three samples of 64 KiB, all
+    // above 7.98 bits a byte: such files measured 7.995 and up, the densest real data of
+    // Silesia (sao, a star catalogue) 7.5, 16-bit pictures 3 to 6.5. JPEG and MP4 measure
+    // 7.92 to 7.98: they keep a little structure (markers, Huffman tables), so they go to
+    // the coders as other data does, and come out a little smaller (six photographs: 2.3%
+    // at level 9). Finding them by their signatures, and storing them, is for a later
+    // version. --compress-all (all_) or the extreme level codes everything anyway.
+    if (!all_ && lvl_ <= 9 && dense(src, len)) {
+        std::vector<quint8> out;
+        le32put(out, quint32(len)); le32put(out, quint32(len)); out.push_back(0);
+        out.insert(out.end(), src, src + len);
+        return out;
+    }
+    // A picture: the analysis found the input to be a 16-bit greyscale picture and cut this
+    // block at whole rows. The picture coder runs at about 13 MB/s, so it codes the whole
+    // block; the other coders are tried on a slice from the middle of the picture, against
+    // the picture coder on the same slice, and the smaller wins. At the fast levels the
+    // comparison is with the LZ coder on the whole block; at the extreme level with cm9 on
+    // the whole block.
+    if (geo.oky) {
+        const std::vector<quint8> pc = pic::enc(src, len, geo, lvl_ >= 10);
+        if (!pc.empty() && pc.size() < len) {
+            bool win;
+            if (lvl_ >= 10) win = pc.size() + 1 < stratazip::cm9::cmenc(src, len, lvl_, tmx_).size();
+            else if (lvl_ >= 7) {
+                const size_t rb = 2 * size_t(geo.wid), body = len - geo.hdr, nr = body / rb, tr = std::max<size_t>(8, std::min(nr, (size_t(256) << 10) / rb));
+                const size_t a = geo.hdr + (nr - std::min(nr, tr)) / 2 * rb, m = std::min(nr, tr) * rb;
+                pic::geo g2 = geo; g2.hdr = 0;
+                const std::vector<quint8> ps = pic::enc(src + a, m, g2);
+                win = !ps.empty() && ps.size() < stratazip::cm9::cmenc(src + a, m, 7).size();
+            } else win = pc.size() + 9 < blkenclz(src, len).size();
+            if (win) {
+                std::vector<quint8> out;
+                le32put(out, quint32(len)); le32put(out, quint32(pc.size())); out.push_back(10);
+                out.insert(out.end(), pc.begin(), pc.end());
+                return out;
+            }
+        }
+    }
     // Audio: 16-bit PCM goes to the waveform coder when trials say it wins. At the
     // strong levels the trials are against the context-mixing coder (level 7) on three
     // samples of 64 KiB, at a sixth, a half and five sixths of the block, and the waveform
@@ -4401,7 +4995,7 @@ stratazip::Archiver::blkenc(
                 for (int k = 0; k < 3 && m >= 4096; ++k) {
                     const size_t a = hdr + ((len - hdr - m) * size_t(2 * k + 1) / 6) / st * st;
                     sa += aud::enc(src + a, m, ch, 0).size();
-                    sc += cm8::cmenc(src + a, m, 7).size();
+                    sc += stratazip::cm9::cmenc(src + a, m, 7).size();
                 }
                 if (m >= 4096 && sa < sc) d = aud::enc(src, len, ch, hdr);
             } else {
@@ -4430,14 +5024,14 @@ stratazip::Archiver::blkenc(
             const size_t m = std::min<size_t>(len, 1 << 16);
             bool pur = len >= (size_t(256) << 10);
             for (size_t i = 0; pur && i < len; i += 61) pur = dna::bas(src[i]) >= 0;
-            if (pur || dna::enc(src, m).size() < cm8::cmenc(src, m, 7).size()) {
+            if (pur || dna::enc(src, m).size() < stratazip::cm9::cmenc(src, m, 7).size()) {
                 const std::vector<quint8> d = dna::enc(src, len);
                 if (d.size() < len) { le32put(out, quint32(d.size())); out.push_back(5); out.insert(out.end(), d.begin(), d.end()); return out; }
             }
         }
-        std::vector<quint8> cod = cm8::cmenc(src, len, lvl_);
+        std::vector<quint8> cod = stratazip::cm9::cmenc(src, len, lvl_, tmx_);
         if (cod.size() + 1 >= len) { le32put(out, quint32(len)); out.push_back(0); out.insert(out.end(), src, src + len); }
-        else { le32put(out, quint32(cod.size() + 1)); out.push_back(7); out.push_back(quint8(lvl_)); out.insert(out.end(), cod.begin(), cod.end()); }
+        else { le32put(out, quint32(cod.size() + 1)); out.push_back(9); out.push_back(quint8(lvl_)); out.insert(out.end(), cod.begin(), cod.end()); }
         return out;
     }
     return blkenclz(src, len);
@@ -4872,5 +5466,5 @@ stratazip::Archiver::prsopt(
 
 QString
 stratazip::Archiver::ver() {
-    return QStringLiteral("StrataZip " STRATAZIP_VERSION " (format 8; reads formats 6 and 7)");
+    return QStringLiteral("StrataZip " STRATAZIP_VERSION " (format 9; reads formats 6, 7 and 8)");
 }

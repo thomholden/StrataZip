@@ -18,15 +18,28 @@
 //   - levels 1 to 6: LZ77 with repeat offsets and a tiered match finder, four rANS
 //     streams, and derivative (delta) filters for numeric data; levels 5 and 6 find the
 //     cheapest parse of each block, priced in bits;
-//   - levels 7 to 9: context mixing in the manner of PAQ, with word, record and picture
-//     models, a 16-bit gated mixer, bit histories, and the models a block does not use
-//     left out by trial;
+//   - levels 7 to 10: context mixing in the manner of PAQ (cm9.h): forty models, among
+//     them word, line and field, sparse, indirect, markup and long-match contexts; a
+//     16-bit gated mixer with five weight sets and a learning rate that steers itself;
+//     the models a block does not use left out in one pass; and the byte values a block
+//     never uses ruled out, so the decisions they settle are not coded;
+//   - groups: blocks that resemble each other start from a model primed on all of them,
+//     and text shares one word dictionary (words.h), so blocks coded in parallel do not
+//     start as strangers;
+//   - 16-bit greyscale pictures (picture.h), found by analysing the input: twelve
+//     predictors fused by their recent errors, at every level;
+//   - deflate streams inside ZIP, gzip and PDF data (recompress.h): unwrapped, coded as what
+//     they hold, and made again bit for bit with a bundled zlib;
 //   - DNA: bases at two bits, with the reverse-complement strand learned;
 //   - 16-bit PCM audio: mid and side, a linear predictor fitted per frame, two adaptive
-//     sign-sign LMS filters after it, and the residual arithmetic-coded.
+//     sign-sign LMS filters after it, and the residual arithmetic-coded;
+//   - data as dense as noise (archives, encrypted data) stored as it is at levels 1 to 9.
 //
-// The format is StrataZip's own (magic "HDZ8", extension .stz); docs/FORMAT.md
-// describes it. Archives of formats 6 and 7 are still read.
+// Level 10, the extreme level, spends the machine's memory (at most 75% of what is
+// available) on 64 MiB blocks and larger tables, and codes everything.
+//
+// The format is StrataZip's own (magic "HDZ9", extension .stz); docs/FORMAT.md
+// describes it. Archives of formats 6, 7 and 8 are still read.
 //
 // Abbreviations used in the source, three letters where they fit:
 //
@@ -44,7 +57,7 @@
 //   hsh   hash
 //   lit   literal: a byte copied as itself
 //   lrn   literal run: how many literals precede a match
-//   lvl   level: how hard the match finder searches, 1 to 9
+//   lvl   level: how hard the coder works, 1 to 10
 //   mln   match length
 //   mtc   match: a length and an offset back into bytes already seen
 //   off   offset: how far back a match starts
@@ -92,6 +105,14 @@
 //   opt   optimal: the parse that minimises the priced bits of the whole block
 //   get   one member out of a directory archive
 //
+//   cm9   the format-9 context-mixing coder (mode 9), what levels 7 to 10 write
+//   pic   the picture coder (mode 10)                  geo   a picture's geometry
+//   grp   a group: blocks sharing a primer (mode 11)   gbk   a block of a group (mode 12)
+//   prm   primer                                       wrd   the word dictionary (WRT)
+//   dfl   deflate streams unwrapped (mode 13)          inv   the inverter: deflate made again
+//   kst   what a compression coded, by mode            dns   dense: already compressed
+//   tmx   the largest table, bits
+//
 // The match finder is a "pyramid", kept as a rule rather than as separate windows: a match is accepted only if it is long enough for how far back
 // it reaches, 4 bytes within 64 KiB, 5 within 1 MiB, 6 beyond. Two hash chains feed
 // it: a 4-byte one for short, near matches and an 8-byte one for long, far ones.
@@ -107,6 +128,8 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
+
+#include "picture.h"
 
 namespace stratazip {
 
@@ -178,6 +201,25 @@ public:
     static
     QString                                         ver();
 
+    // What the last compression's blocks were coded as, by record mode (0 stored, 1 LZ,
+    // 5 DNA, 8 audio, 9 cm9, 10 picture, ...): blocks, bytes in, bytes out; and the
+    // geometry of the picture the input was found to be, if it was one.
+    struct                                          Stats {
+        std::array<quint64, 16>                                    cnt{}, raw{}, enc{};
+        int                                                        pwd         = 0;       // picture: width, samples
+        bool                                                       pbe         = false;   // picture: big-endian
+        quint64                                                    phd         = 0;       // picture: header bytes
+        quint64                                                    dfn         = 0;       // deflate streams unwrapped
+        quint64                                                    dfc         = 0;       // their deflated bytes
+        quint64                                                    dfu         = 0;       // their inflated bytes
+    };
+    const Stats&                                      stats() const { return kst_; }
+
+    // Code everything, already-compressed data included (--compress-all). By default data
+    // that is already compressed is stored as it is at levels 1 to 9; the extreme level
+    // tries everything anyway.
+    void                                            setCompressAll(bool a) { all_ = a; }
+
     // The XOR kernels: the CRC by carry-less multiplication and GF(256) by shuffles,
     // checked against the table versions, with both ways' speeds. True if they agree.
     static
@@ -244,6 +286,20 @@ public:
         ,Member*                                                       got         = nullptr
     ) const;
 
+    // What an archive is made of (--info): its header, and for every record its mode
+    // and lengths, with what the coders' own headers say (filters, models left out,
+    // pictures' widths, groups, deflate streams), read without decoding any data. Lines
+    // for a person to read, into out.
+    // With jsn: the same as JSON, for tools and pipelines, and for a directory archive every
+    // member (path, kind, size, time, SHA-256) from the segment headers, still without
+    // decoding any file's data.
+    static
+    Result                                             archiveInfo(
+         QIODevice&                                                 in
+        ,QStringList&                                               out
+        ,QByteArray*                                                jsn         = nullptr
+    );
+
     // What an open archive holds, from its header, without consuming it: 0 not an
     // archive, 1 one stream, 2 a directory.
     static
@@ -300,6 +356,7 @@ private:
     std::vector<quint8>                             blkenc(
          const quint8*                                              src
         ,size_t                                                     len
+        ,const pic::geo&                                            geo         = {}
     ) const;
 
     std::vector<quint8>                             blkenclz(
@@ -349,7 +406,10 @@ private:
     ) const;
 
     int                                             blkkib_;    // block size, KiB
-    int                                             lvl_;       // search level 1-9
+    int                                             lvl_;       // level 1-10 (10: the extreme level)
+    int                                             tmx_        = 22;   // cm9's largest table, bits (up to 24 at level 10)
+    bool                                            all_        = false; // code already-compressed data too
+    mutable Stats                                     kst_;       // what the last compression coded
     int                                             thr_;       // worker threads, 0 = all cores
     int                                             rcv_;       // recovery record, percent of the archive; 0 none
 };

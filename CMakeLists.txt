@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # StrataZip: maximum-ratio archiving. Build: cmake -B build && cmake --build build
 cmake_minimum_required(VERSION 3.19)
-project(StrataZip VERSION 1.0.1 DESCRIPTION "Maximum-ratio file and directory archiver" LANGUAGES CXX)
+project(StrataZip VERSION 1.1.0 DESCRIPTION "Maximum-ratio file and directory archiver" LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,13 +18,25 @@ if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     message(FATAL_ERROR "StrataZip currently builds for x86-64 only (found ${CMAKE_SYSTEM_PROCESSOR}).")
 endif()
 
+# zlib 1.3.1, bundled unchanged (src/zlib/README.md): deflate streams are made again bit
+# for bit, so the deflate must be the same on every machine. Z_PREFIX keeps its symbols
+# apart from the system zlib that Qt links.
+add_library(stratazip_zlib STATIC
+    src/zlib/adler32.c src/zlib/crc32.c src/zlib/deflate.c src/zlib/inffast.c
+    src/zlib/inflate.c src/zlib/inftrees.c src/zlib/trees.c src/zlib/zutil.c
+)
+set_target_properties(stratazip_zlib PROPERTIES LINKER_LANGUAGE C)
+target_compile_definitions(stratazip_zlib PRIVATE Z_PREFIX)
+
 add_executable(stratazip
     src/main.cpp
     src/stratazip.cpp  src/stratazip.h
+    src/cm9.h          src/picture.h      src/words.h
+    src/recompress.cpp src/recompress.h
     src/sha256.cpp     src/sha256.h
     src/xorkernels.cpp src/xorkernels.h
 )
-target_link_libraries(stratazip PRIVATE Qt6::Core Qt6::Concurrent)
+target_link_libraries(stratazip PRIVATE stratazip_zlib Qt6::Core Qt6::Concurrent)
 target_compile_definitions(stratazip PRIVATE STRATAZIP_VERSION="${PROJECT_VERSION}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(stratazip PRIVATE -march=x86-64-v2 $<$<CONFIG:Release>:-O3>)

@@ -10,12 +10,13 @@ import sys
 from collections import defaultdict
 
 ORDER = ["gzip9", "bzip2", "zstd19", "zstd22", "brotli11", "xz9e", "7zmx9", "bzip3",
-         "stz4", "stz6", "zpaq5", "stz9"]
+         "stz4", "stz6", "zpaq5", "stz9", "stz10"]
 NAMES = {"gzip9": "gzip -9", "bzip2": "bzip2 -9", "zstd19": "zstd -19",
          "zstd22": "zstd --ultra -22 --long=27", "brotli11": "brotli -q 11 -w 24",
          "xz9e": "xz -9e", "7zmx9": "7z -mx=9", "bzip3": "bzip3",
          "stz4": "**StrataZip -l 4**", "stz6": "**StrataZip -l 6**",
-         "zpaq5": "zpaq -m5", "stz9": "**StrataZip -l 9**"}
+         "zpaq5": "zpaq -m5", "stz9": "**StrataZip -l 9**",
+         "stz10": "**StrataZip -l 10**"}
 
 rows = defaultdict(dict)
 for line in open(sys.argv[1]):

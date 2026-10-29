@@ -15,6 +15,7 @@ format.
 | 6 | `HDZ6` | pre-release | LZ, context mixing (mode 2), recovery records |
 | 7 | `HDZ7` | pre-release | directories, segments, cm7 (mode 4), DNA (mode 5) |
 | 8 | `HDZ8` | StrataZip 1.0 | cm8 (mode 7), audio (mode 8) |
+| 9 | `HDZ9` | StrataZip 1.1 | cm9 (mode 9), pictures (mode 10), groups (modes 11, 12), deflate streams (mode 13) |
 
 All integers are little-endian.
 
@@ -22,10 +23,10 @@ All integers are little-endian.
 
 | Field | Size | |
 |---|---|---|
-| magic | 4 | `HDZ8` (or `HDZ6`, `HDZ7`) |
-| format | 1 | 8 (or 6, 7) |
+| magic | 4 | `HDZ9` (or `HDZ6`, `HDZ7`, `HDZ8`) |
+| format | 1 | 9 (or 6, 7, 8) |
 | block size | 4 | KiB; the most raw data one block holds |
-| flags | 1 | bit 0: recovery records follow their groups; bit 1: a directory archive |
+| flags | 1 | bit 0: recovery records follow their recovery groups; bit 1: a directory archive; bits 4 to 7 (format 9): the largest context-mixing table the archive uses, as its size in bits less 16, so a reader knows the memory it needs before decoding |
 
 ## Records
 
@@ -48,12 +49,22 @@ The header is followed by records, each:
 | 4 | context mixing, format 7 (cm7) |
 | 5 | DNA: bases at two bits, both strands modelled; anything else escaped |
 | 6 | a segment header (directory archives, below), itself compressed |
-| 7 | context mixing, format 8 (cm8): what levels 7 to 9 write |
+| 7 | context mixing, format 8 (cm8) |
 | 8 | 16-bit PCM audio: mid/side, a per-frame linear predictor, two LMS filters, an arithmetic-coded residual |
+| 9 | context mixing, format 9 (cm9): what levels 7 to 10 write. The level (1), the coder's settings (record lengths, filter, the 64-bit mask of models left out, table size, flags), the 32-byte map of the byte values the block uses when not all are, a word dictionary when flagged, then the arithmetic-coded bits |
+| 10 | a 16-bit greyscale picture: the header's length (4) and its bytes as they are, the width in samples (4), a flags byte (byte order, the fusion's power, the Golomb offset), a scale byte, a final odd byte as it is when the length is odd, then the arithmetic-coded samples |
+| 11 | a model group's record; raw length 0, not part of the data. The group's number (1), the level (1), its block count (2), the settings it shares, each block's slice length (4 each), the shared word dictionary when flagged (its length, its coded length, its bytes coded by cm9), then the primer: the first slice of every block, end to end, coded as one stream |
+| 12 | a block of a model group: the group's number (1), the block's index in the group (2), its length (4), then its remainder, coded by cm9 starting from the model the group's primer left |
+| 13 | deflate streams unwrapped in the data that follows; raw length 0, not part of the data. A count (4), then for each stream its place in the following data (8), its deflated and inflated lengths (4 + 4), the zlib level and memory level that remake it (1 + 1; always raw deflate, a 15-bit window and the default strategy) and the CRC-32 of its deflated bytes (4). The data carries the inflated bytes in each stream's place; the reader deflates them again with the bundled zlib 1.3.1 and checks the length and CRC |
 | 0x7F | the end record |
 
 Each data block is independent of the others, so blocks are compressed and decompressed
-in parallel, and a damaged block does not affect the rest.
+in parallel, and a damaged block does not affect the rest, with one exception: a block of
+a model group (mode 12) depends on its group's record, so damage to that record (mode 11)
+costs every block of the group. (Model groups are not the recovery groups of the next
+section.) The group record comes before the group's
+first block, is decoded first, and every block of the group then decodes in parallel from
+a copy of its model. A group never crosses a directory segment.
 
 ### The end record
 

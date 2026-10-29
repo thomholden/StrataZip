@@ -60,6 +60,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+          path: src
       - uses: actions/download-artifact@v4
         with:
           name: stratazip-linux-x86_64
@@ -68,5 +73,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha256sum *.deb *.tar.gz > SHA256SUMS
+          # The release notes are the tag's section of CHANGELOG.md, from its heading to the next.
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '/^## / { if (f) exit; if (index($0, "## " v " ") == 1) { f = 1; next } } f' src/CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $v"; exit 1; }
           gh release create "$GITHUB_REF_NAME" *.deb *.tar.gz SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --title "StrataZip ${GITHUB_REF_NAME#v}" --generate-notes
+            --repo "$GITHUB_REPOSITORY" --title "StrataZip $v" --notes-file notes.md

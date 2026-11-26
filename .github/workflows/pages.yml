@@ -1,6 +1,7 @@
 name: pages
 
-# Publishes stratazip.com from site/ (with the icons and banner from assets/).
+# Publishes stratazip.com from site/ (with the icons, the banner, the social card and the
+# logo SVG from assets/).
 # Repository Settings > Pages > Source must be "GitHub Actions".
 
 on:
@@ -31,7 +32,7 @@ jobs:
           mkdir _site
           cp -r site/. _site/
           mkdir _site/assets
-          cp assets/*.png _site/assets/
+          cp assets/*.png assets/*.svg _site/assets/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

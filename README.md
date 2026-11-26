@@ -349,6 +349,12 @@ StrataZip is **dual-licensed**.
 Contributions are welcome under the [Contributor Licence Agreement](CLA.md), which is what
 lets the project offer both licences. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## The logo
+
+For writing about StrataZip: the logo as a vector, [assets/stratazip.svg](assets/stratazip.svg),
+and as PNGs in [assets/](assets/) (`icon-32` and `icon-64` are the mark alone; `icon-128`
+to `icon-1024` are the mark over the name), with the banner and the social card.
+
 ## Support the project
 
 StrataZip is made by one independent developer. Buying a commercial licence, or

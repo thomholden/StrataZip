@@ -1,15 +1,27 @@
-# Untested first draft. Build with: snapcraft (from the repository root, after copying
+# Untested draft. Build with: snapcraft (from the repository root, after copying
 # this file to snap/snapcraft.yaml), or let Launchpad build it from the repository.
+#
+# The drive (--mount) needs FUSE, which a strictly confined snap cannot use without
+# the fuse-support interface, which is not connected automatically. Until
+# then the snap compresses, extracts, syncs, locks, signs and searches, but does not
+# mount. Nor does it stage an ssh client, so ssh:// sync is not in it yet. The .deb
+# and the .tar.gz on the Releases page do both as usual.
 name: stratazip
 base: core24
-version: '1.0.1'
-summary: Maximum-ratio file and directory archiver
+version: '1.2.0'
+summary: Measured compression. Living archives. Traceable data.
 description: |
   StrataZip compresses files and directory trees to the smallest size it can, choosing
-  a coder for every block by trial: LZ, context mixing, DNA and 16-bit audio. Every
-  block is CRC-checked and every file SHA-256-checked on the way out, and optional
-  recovery records can repair a damaged archive.
+  a coder for every block by trial: LZ, context mixing, pictures, 16-bit audio and DNA.
+  Every block is CRC-checked and every file SHA-256-checked on the way out, and
+  optional recovery records can repair a damaged archive.
+
+  A folder archive can also change in place: every change is a commit appended to
+  it, so a crash costs only what was written since the last one. Sync folders into
+  it, or several folders both ways through it; lock parts of it with a password or a
+  key; sign it; search it without unpacking; read it as it stood at any commit.
 license: AGPL-3.0-only
+icon: assets/icon-256.png
 grade: stable
 confinement: strict
 platforms:

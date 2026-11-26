@@ -133,6 +133,24 @@ section.alt .tablebox { background: var(--raised); }
 .feature h3 { margin: 0 0 6px; font-size: 1.05rem; color: var(--head); }
 .feature p { margin: 0; color: var(--muted); font-size: 0.95rem; }
 
+/* ---- uses ---- */
+.kicker { margin: 0 0 4px; color: var(--gold); font-weight: 700; font-size: 0.85rem;
+  letter-spacing: 0.08em; text-transform: uppercase; }
+.uses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.use { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px; display: flex; flex-direction: column; min-width: 0; }
+section.alt .use { background: var(--raised); }
+.use h3 { margin: 0 0 6px; font-size: 1.05rem; color: var(--head); }
+.use p { margin: 0 0 14px; color: var(--muted); font-size: 0.95rem; }
+.mini { background: var(--deep); color: #dfe3e6; border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; margin: auto 0 12px; font-size: 0.8rem; line-height: 1.65;
+  white-space: normal; }
+.mini .c { display: block; padding-left: 1.3em; text-indent: -1.3em; }
+.mini .t { white-space: nowrap; }
+.mini .p { color: var(--gold); user-select: none; }
+.use .more { font-weight: 600; font-size: 0.92rem; text-decoration: none; }
+.use .more:hover { text-decoration: underline; }
+
 /* ---- pricing ---- */
 .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 24px; }
 .plan { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
@@ -168,9 +186,12 @@ footer .wrap { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space
 footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
 
 /* ---- narrow screens ---- */
+@media (max-width: 1000px) {
+  .uses { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
-  .features, .plans { grid-template-columns: 1fr; }
+  .features, .plans, .uses { grid-template-columns: 1fr; }
   .plan .who { min-height: 0; }
 }
 @media (max-width: 760px) {

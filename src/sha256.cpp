@@ -6,17 +6,22 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// sha256.cpp: SHA-256 on three kernels. See the header.
+// the cryptography library: SHA-256 on three kernels. See the header.
 
 #include "sha256.h"
 
 #include <algorithm>
 #include <cstring>
+//the BMI2, SHA-NI and AVX paths on x86 only (and not with STRATAZIP_NOSIMD, which checks the plain
+// one there); elsewhere the plain rounds, the same digests.
+#if (defined(__x86_64__) || defined(__i386__)) && !defined(STRATAZIP_NOSIMD)
+#define STRATAZIP_SHA_X86 1
 #include <immintrin.h>
+#endif
 #include <vector>
 
 namespace stratazip {
-namespace sha {
+namespace cryprm {
 
 namespace {
 
@@ -94,6 +99,7 @@ cmpgen(u32 st[8], const std::uint8_t* d, std::size_t nb) {
 // The same text twice: for any x86-64, and for processors with BMI2 (rorx, andn: the
 // rotates and the choice function in one instruction each), chosen at run time.
 void cmpscl0(u32 st[8], const std::uint8_t* d, std::size_t nb) { cmpgen(st, d, nb); }
+#ifdef STRATAZIP_SHA_X86
 __attribute__((target("bmi2,avx2"))) void cmpbmi(u32 st[8], const std::uint8_t* d, std::size_t nb) { cmpgen(st, d, nb); }
 
 void
@@ -101,12 +107,16 @@ cmpscl(u32 st[8], const std::uint8_t* d, std::size_t nb) {
     static const bool bmi = (__builtin_cpu_init(), __builtin_cpu_supports("bmi2") && __builtin_cpu_supports("avx2"));
     if (bmi) cmpbmi(st, d, nb); else cmpscl0(st, d, nb);
 }
+#else
+void cmpscl(u32 st[8], const std::uint8_t* d, std::size_t nb) { cmpscl0(st, d, nb); }
+#endif
 
 // ------------------------------------------------------------------------------
 // SHA-NI. The instructions keep the state as ABEF and CDGH; each sha256rnds2 does two
 // rounds, and sha256msg1/msg2 extend the schedule four words at a time.
 // ------------------------------------------------------------------------------
 
+#ifdef STRATAZIP_SHA_X86
 __attribute__((target("sha,sse4.1,ssse3"))) void
 cmpni(u32 st[8], const std::uint8_t* d, std::size_t nb) {
     const u32* K = C().K;
@@ -154,6 +164,12 @@ hasni() {
 }
 bool hasavx2() { __builtin_cpu_init(); return __builtin_cpu_supports("avx2"); }
 bool hasavx512() { __builtin_cpu_init(); return __builtin_cpu_supports("avx512f"); }
+#else
+void cmpni(u32 st[8], const std::uint8_t* d, std::size_t nb) { cmpscl0(st, d, nb); }   // never chosen: hasni() is false
+bool hasni() { return false; }
+bool hasavx2() { return false; }
+bool hasavx512() { return false; }
+#endif
 
 // ------------------------------------------------------------------------------
 // Lanes: L messages at once, each lane its own message at its own length. A lane that
@@ -233,8 +249,13 @@ mnylns(const std::uint8_t* const* m, const std::size_t* n, h256* out, std::size_
     }
 }
 
+#ifdef STRATAZIP_SHA_X86
 __attribute__((target("avx2"))) void mny8(const std::uint8_t* const* m, const std::size_t* n, h256* o, std::size_t c, const u32 (*s)[8], const u64* p) { mnylns<v8, 8>(m, n, o, c, s, p); }
 __attribute__((target("avx512f"))) void mny16(const std::uint8_t* const* m, const std::size_t* n, h256* o, std::size_t c, const u32 (*s)[8], const u64* p) { mnylns<v16, 16>(m, n, o, c, s, p); }
+#else
+void mny8(const std::uint8_t* const* m, const std::size_t* n, h256* o, std::size_t c, const u32 (*s)[8], const u64* p) { mnylns<v8, 8>(m, n, o, c, s, p); }
+void mny16(const std::uint8_t* const* m, const std::size_t* n, h256* o, std::size_t c, const u32 (*s)[8], const u64* p) { mnylns<v16, 16>(m, n, o, c, s, p); }
+#endif
 
 // One message continued from a state, on a single-message kernel: the fallback of the
 // many-from-states call.
@@ -399,5 +420,5 @@ sha256mnyst(
     for (std::size_t i = 0; i < cnt; ++i) out[i] = fromst(st0[i], pre[i], m[i], n[i], k);
 }
 
-} // namespace sha
+} // namespace cryprm
 } // namespace stratazip

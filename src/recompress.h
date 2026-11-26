@@ -6,22 +6,25 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// recompress.h: deflate recompression, after precomp. ZIP and its kin (JAR, APK, ODF, EPUB,
-// DOCX), gzip and PDF all carry deflate streams, which no model can shrink. A stream is
-// inflated, and deflated again with zlib at each level and memory level; if one setting
-// gives back the stream's bytes exactly, the archive keeps the inflated bytes (which the
-// models then code as what they are: class files, XML, text) and the setting, and the
-// decoder deflates them again, bit for bit. A stream that no setting remakes is left as
-// it is.
+// dfl, format 09's deflate recompression, after precomp: ZIP
+// and its kin (JAR, APK, ODF, EPUB, DOCX), gzip and PDF all carry deflate streams, which
+// no model can shrink. A stream is inflated, and deflated again with zlib at each level and
+// memory level; if one setting gives back the stream's bytes exactly, the archive keeps
+// the inflated bytes (which the models then code as what they are: class files, XML, text)
+// and the setting, and the decoder deflates them again, bit for bit. A stream that no
+// setting remakes is left as it is.
 //
 // Determinism is the whole game: the decoder must make the same bytes on every machine,
-// forever. So the deflate is a bundled copy of zlib 1.3.1 (zlib/, built with Z_PREFIX so
-// it never meets the system's), used for nothing else, and the encoder checks its own
-// output with that same copy before choosing. Each stream's CRC-32 is kept and checked as
-// well.
+// forever. So the deflate is a bundled copy of zlib 1.3.1 (zlb/, built with Z_PREFIX so it
+// never meets the system's), used for nothing else, and the encoder checks its own output
+// with that same copy before choosing. Each stream's CRC-32 is kept and checked as well.
 //
-// Abbreviations:  dfl  deflate recompression;   ent  one stream found and remade;
-//                 rdf  re-deflate
+//"unwrap what we can see into; store what we can't". Deflate is the
+// kind we can see into.
+//
+// TLAs:  dfl  deflate recompression;   ent  one stream found and remade;   rdf  re-deflate
+//
+// Signed, 28 October 2026.
 
 #ifndef STRATAZIP_RECOMPRESS_H
 #define STRATAZIP_RECOMPRESS_H

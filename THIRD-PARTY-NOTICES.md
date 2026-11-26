@@ -28,6 +28,15 @@ PDF data, and to make them again, bit for bit, on extraction.
 - Licensed under the zlib licence, reproduced in `src/zlib/LICENSE`.
 - Source code: <https://github.com/madler/zlib>, tag `v1.3.1`.
 
+## libsais
+
+StrataZip includes **libsais 2.8.7**, unchanged, in `src/sais/`. It builds the suffix arrays
+of the BWT coder at levels 5 and 6.
+
+- Copyright (c) 2021-2025 Ilya Grebnov.
+- Licensed under the Apache License, Version 2.0, reproduced in `src/sais/LICENSE`.
+- Source code: <https://github.com/IlyaGrebnov/libsais>.
+
 ## Algorithms
 
 StrataZip's code was written for this project. Its methods draw on published

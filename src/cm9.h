@@ -6,23 +6,32 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// cm9.h: cm9, the context-mixing coder of levels 7 to 10 (format 9's mode 9), with the
-// groups that let blocks share a primer (modes 11 and 12). It is cm8 (mode 7, kept in
-// stratazip.cpp exactly, to read format-8 archives) carried forward with:
+// cm9, format 09's context-mixing coder (mode 9), for levels 7 to 10: a core of its own,
+// so other components can take it without the archive around it. It is cm8 (mode 7, in
+//kept there exactly to read HDZ8) carried forward with what the
+// lab measured for v09:
 //
-//   the line and field model                       sparse, indirect, orders 5, 8 and 12,
-//   a fifth weight set, by the byte two back         the word trigram, markup, a long
-//   a self-estimating learning rate                  match model
-//   the model choice in one pass (64-bit mask)     untouchable bytes ruled out
+//   W3  the line and field model                    W4  sparse, indirect, orders 5, 8 and
+//   W4  a fifth weight set, by the byte two back        12, the word trigram, markup, a
+//   W4  the self-estimating learning rate               long match model
+//   W5  the model choice in one pass (64-bit mask)  W5  untouchable bytes
 //
-// The abbreviations are listed in stratazip.h. Integer arithmetic throughout the coding
-// path, so encoder and decoder agree on every x86-64; floating point only in the encoder's
-// estimate of what a model is worth, whose outcome travels in the block.
+// The lab's `cmx.h` held each of these behind a switch; with the switches set as the plan
+// keeps them, cm9 codes the same bits (checked against the lab when cm9 was written).
+// Definitions of the TLAs are in. Integer arithmetic throughout the
+// coding path, so encoder and decoder agree on every x86-64; floating point only in the
+// encoder's estimate of what a model is worth, whose outcome travels in the block.
+//
+// Signed, 28 October 2026.
 
 #ifndef STRATAZIP_CM9_H
 #define STRATAZIP_CM9_H
 
+#ifdef CM9_LAB
+#include "base.h"
+#else
 #include <QtGlobal>
+#endif
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -31,7 +40,7 @@
 #include <map>
 #include <utility>
 #include <vector>
-#include <emmintrin.h>
+#include "simd.h"           //the mixers' SSE2, or plain C to the same bits
 #include <memory>
 
 #include "words.h"
@@ -81,13 +90,13 @@ struct stm {
         quint32& v = t[i];
         const int n = int(v & 1023), pr = int(v >> 10);
         if (n < lim) ++v; else v = (v & 0xfffffc00u) | quint32(lim);
-        // In 64 bits: the product can pass 2^31 (the state maps start near 0 or 1); the
-        // result is the same bits a 32-bit product gave, now without overflow.
+        // In 64 bits: the product can pass 2^31 (v06's state maps start near 0 or 1); the
+        // result is the same bits v05's 32-bit product gave, now without overflow.
         v += quint32(qint64(((y << 22) - pr) >> 3) * dtt()[size_t(n)]) & 0xfffffc00u;
     }
 };
 
-// Bit histories: a state per context slot standing for how many zeros and ones were
+// Bit histories (v06): a state per context slot standing for how many zeros and ones were
 // seen there, the older side discounted when the bit turns, so a context that changes its
 // mind is believed sooner (the nonstationary counts of PAQ). 191 states, made here by
 // walking every pair of counts the rule can reach, in order, so encoder and decoder agree.
@@ -97,7 +106,7 @@ struct bhs {
     int cnt = 0;                                          // states in use
     static const bhs& one() { static const bhs b; return b; }
     bhs() {
-        // a state where both values have been seen also keeps which came last, as
+        // v08: a state where both values have been seen also keeps which came last, as
         // paq8's do (the same count, after a turn, predicts differently); the first cap
         // comes down from 48 to 40 so the states still fit in a byte (245 of them).
         static const int cap[8] = {40, 24, 16, 10, 7, 6, 5, 4};
@@ -120,7 +129,7 @@ struct bhs {
     }
 };
 
-// A context slot: 16 bits of probability, 8 bits of bit-history state, 8 bits of
+// A context slot (v06): 16 bits of probability, 8 bits of bit-history state, 8 bits of
 // count (to the limit); the learning rate falls as the count grows, as in stm.
 inline void
 slupd(quint32& v, int y, int lim) {
@@ -140,7 +149,7 @@ struct bkt {
         t = raw.data() + ((64 - (reinterpret_cast<quintptr>(raw.data()) & 63)) & 63) / 4;
         for (size_t i = 0; i < (size_t(16) << bits); i += 16) t[i] = 0;
     }
-    // A copy (for the primer) carries the statistics: the same entries, in a table
+    // A copy (v09, for the primer) carries the statistics: the same entries, in a table
     // aligned on its own. t must point into its own raw.
     bkt(const bkt& o) : raw(o.raw.size()), bb(o.bb) {
         t = raw.data() + ((64 - (reinterpret_cast<quintptr>(raw.data()) & 63)) & 63) / 4;
@@ -152,7 +161,7 @@ struct bkt {
     void pre(quint32 h) const { const size_t i = at(h); __builtin_prefetch(&t[i]); __builtin_prefetch(&t[i ^ 16]); }
     // A new context takes its parent's probabilities (the coarser context it refines,
     // already looked up), with its count capped at inh, so it starts from what the
-    // coarser order knows and leaves it as fast as its own evidence allows (PPMd's
+    // coarser order knows and leaves it as fast as its own evidence allows (v06; PPMd's
     // inheritance of information). No parent, or inh 0: a half for every bit.
     quint32* get(quint32 h, const quint32* par = nullptr, int inh = 0) {
         const quint32 chk = (h & 0xffffu) | 0x10000u;
@@ -170,15 +179,16 @@ struct bkt {
 // A gated linear mixer in the stretch domain: five sets of weights, each chosen by its own
 // selector and learned online from its own error, and a second layer that weighs the sets'
 // outputs. Inputs and weights in 16 bits, the dot product and the update on SSE2's
-// multiply-add, eight at a time (after paq8).
+// multiply-add, eight at a time (v07, after paq8).
 //
-// The self-estimating learning rate. Each weight row learns at a rate that falls with its
-// use, from 12 to 3 in cm8's units (where the rate is 6), half way at 1,024 updates: the Kalman gain of a steady target falls as 1/n, to a
+// v09: the self-estimating learning rate. Each weight row
+// learns at a rate that falls with its use, from 12 to 3 in v08's units (where the rate
+// was 6), half way at 1,024 updates: the Kalman gain of a steady target falls as 1/n, to a
 // floor set by how fast the target drifts. And each set has a brake: every 4,096 updates,
 // the products of successive errors in the same row are summed against 2% of their energy;
 // errors that cancel (the learner overreacting) lower the set's factor by a sixteenth,
-// errors that agree raise it, never above one. On the middle MiB of each Silesia file
-// together: 0.52% smaller, every file better.
+// errors that agree raise it, never above one. On the lab's twelve samples together: 0.52%
+// smaller, every file better.
 struct mxr {
     static const int K = 5;                               // weight sets
     int n, k;
@@ -201,28 +211,8 @@ struct mxr {
     void add(int a) { x[size_t(nx++)] = qint16(a); }
     // The dot product, scaled so 16384 is a weight of one: each pair of products is shifted
     // down by 8 before it is summed, so no sum leaves 32 bits.
-    int  dot(const qint16* wp) const {
-        __m128i s = _mm_setzero_si128();
-        const int m = (nx + 7) & ~7;
-        for (int i = 0; i < m; i += 8) {
-            const __m128i p = _mm_madd_epi16(_mm_load_si128(reinterpret_cast<const __m128i*>(&x[size_t(i)])), _mm_loadu_si128(reinterpret_cast<const __m128i*>(wp + i)));
-            s = _mm_add_epi32(s, _mm_srai_epi32(p, 8));
-        }
-        s = _mm_add_epi32(s, _mm_srli_si128(s, 8));
-        s = _mm_add_epi32(s, _mm_srli_si128(s, 4));
-        return std::clamp(_mm_cvtsi128_si32(s) >> 6, -2047, 2047);
-    }
-    void trn(qint16* wp, int err) {
-        const __m128i e = _mm_set1_epi16(qint16(err)), one = _mm_set1_epi16(1);
-        const int m = (nx + 7) & ~7;
-        for (int i = 0; i < m; i += 8) {
-            const __m128i xi = _mm_load_si128(reinterpret_cast<const __m128i*>(&x[size_t(i)]));
-            __m128i t = _mm_mulhi_epi16(_mm_adds_epi16(xi, xi), e);
-            t = _mm_srai_epi16(_mm_adds_epi16(t, one), 1);
-            __m128i* wv = reinterpret_cast<__m128i*>(wp + i);
-            _mm_storeu_si128(wv, _mm_adds_epi16(_mm_loadu_si128(wv), t));
-        }
-    }
+    int  dot(const qint16* wp) const { return stratazip::smd::dot(x.data(), wp, nx); }   //SSE2, or plain C to the same bits
+    void trn(qint16* wp, int err) { stratazip::smd::trn(x.data(), wp, nx, err); }
     void mix(const int* sel) {
         for (int j = 0; j < k; ++j) {
             const int c = sel[j];
@@ -239,7 +229,7 @@ struct mxr {
         return pr;
     }
     // The second layer's probability had the inputs at idx (cnt of them) been left out of
-    // every set's sum (the model choice in one pass). An estimate: it ignores how
+    // every set's sum (v09, W5: the model choice in one pass). An estimate: it ignores how
     // the other weights would have learned without them, so it overstates what they are
     // worth, which keeps a model rather than lose one.
     int  wout(const int* idx, int cnt) const {
@@ -328,7 +318,7 @@ struct adec {
 // The predictor, shared by encoder and decoder.
 //
 // Models 0 to 21 are cm8's: orders 0 to 4 and 6, the word, the record and image models,
-// the six image predictors. cm9 adds, at levels 8 and up:
+// the six image predictors. v09 adds, at levels 8 and up:
 //
 //   22, 23  indirect: what followed this byte, and this pair, the times before (paq8)
 //   24, 25  orders 5 and 8        26  the word trigram        28  order 12
@@ -342,7 +332,7 @@ struct adec {
 // back up to 400). Every model beyond the order chain and the word can be left out of a
 // block by the model choice (a bit of the 64-bit mask, by its number).
 const int nmd = 22;                                       // cm8's models
-const int nmx = 42;                                       // with cm9's (27 and 29 are unused numbers)
+const int nmx = 42;                                       // with v09's (27 and 29 are unused numbers)
 
 inline bool
 xmodel(int i) { return i >= nmd && i < nmx && i != 27 && i != 29; }
@@ -385,7 +375,7 @@ public:
         }
     }
     // A copy goes on from where this one stands, over another buffer that begins with the
-    // same bytes (a group's primer). Only between bytes: the pointers into the tables are
+    // same bytes (the primer). Only between bytes: the pointers into the tables are
     // found again at the next byte's first bit.
     void rebind(const quint8* buf) { b_ = buf; bk_.fill(nullptr); ent_.fill(nullptr); rb_.fill(nullptr); }
     int  nmod() const { return nm_; }
@@ -407,8 +397,8 @@ public:
         for (int i = 0; i < nm_; ++i) {
             ent_[size_t(i)] = bk_[size_t(i)] + ptl;
             mx_.add(stretch(int(*ent_[size_t(i)] >> 20)));
-            // The state map: what contexts with this history usually do next; and
-            // how sure a state is that has only ever seen one value.
+            // The state map: what contexts with this history usually do next (v06); and
+            // how sure a state is that has only ever seen one value (v08).
             const int sti = int((*ent_[size_t(i)] >> 8) & 255);
             si_[size_t(i)] = size_t(i) * 256 + size_t(sti);
             mx_.add(stretch(sh_.p(si_[size_t(i)])));
@@ -430,7 +420,7 @@ public:
         mx_.add(ex < 0 ? 0 : mp);
         mx_.add(ex < 0 ? 0 : (ex ? 256 : -256) * std::min(ml_, 32) / 4);
         mx_.add(256);
-        // The long match: the last 24 bytes looked up.
+        // The long match (v09): the last 24 bytes looked up.
         int ex2 = -1;
         if (ml2_ > 0) {
             const int pb = b_[mp2_] + 256;
@@ -439,7 +429,7 @@ public:
         mm2i_ = size_t(std::min(ml2_ / 4, 63)) * 4 + size_t(ex2 < 0 ? 0 : 2 + ex2);
         mx_.add(ex2 < 0 ? 0 : stretch(mm2_.p(mm2i_)));
         mx_.add(ex2 < 0 ? 0 : (ex2 ? 256 : -256) * std::min(ml2_, 64) / 8);
-        // How far up the order chain the contexts have been seen before.
+        // How far up the order chain the contexts have been seen before (v06).
         int od = 0;
         for (int i = 0; i < nm_; ++i) if (ac_[size_t(i)] >= 1 && ac_[size_t(i)] <= 6 && (*ent_[size_t(i)] & 255) > 0) ++od;
         const int sel[mxr::K] = {
@@ -447,7 +437,7 @@ public:
             ,c1_ * 8 + bp_
             ,(int(std::min(cl_, 63u)) * 4 + (c1_ >> 6)) * 8 + bp_
             ,c0_ + 256 * od
-            ,(c2_ & 0xff) * 8 + bp_                       // the byte two back
+            ,(c2_ & 0xff) * 8 + bp_                       // v09: the byte two back
         };
         mx_.mix(sel);
         const int pm = mx_.fin(c0_);
@@ -458,7 +448,7 @@ public:
         return pr_;
     }
 
-    // after nxt(), the cost in bits of the actual bit y, had each model been left out,
+    // W5: after nxt(), the cost in bits of the actual bit y, had each model been left out,
     // less its cost with every model in, added to dm by model number. From the mixer's
     // second layer, before the APMs, both ways.
     void est(int y, double* dm, const double* lg) const {
@@ -474,7 +464,7 @@ public:
         }
     }
 
-    // Untouchable bytes: a bit whose other branch holds only byte values the block
+    // Untouchable bytes (v09): a bit whose other branch holds only byte values the block
     // never uses is certain. It is not coded, and the mixer and the APMs rest; the models
     // still learn it, as the shared state maps learn from easy bits too.
     void skp(int y, size_t pos) {
@@ -577,7 +567,7 @@ private:
         h_[13] = H(H(13, upb), col2 | (s2 > 1 ? B(2 * s2) << 16 : 0)); // second record length: above
         h_[14] = H(H(14, upb), col2 | ((c4_ & 0xff) << 16));           // second record length: above and left
         h_[15] = H(H(15, wh_), pw_);                                   // two words: this one and the last
-        {   // from image coding: six predictions of a pixel from its neighbours
+        {   // v07, from medimg and medvid: six predictions of a pixel from its neighbours
             const int W = int(B(1)), N = int(up), NW = int(ul), NE = s > 1 ? int(B(s - 1)) : 0, WW = int(B(2)), NN = int(up2), NNE = s > 1 ? int(B(2 * s - 1)) : 0;
             const int mx = std::max(W, N), mn = std::min(W, N);
             const int med = NW >= mx ? mn : (NW <= mn ? mx : W + N - NW);           // LOCO-I's median edge detector
@@ -599,7 +589,7 @@ private:
             h_[20] = H(H(20, cl8(2 * W - WW)), quint32(N) >> 2);
             h_[21] = H(H(21, cl8(N + NE - NNE)), cl8(W + NE - N) >> 2);
         }
-        {   // indirect, the bytes that followed this one, and these two, before
+        {   // v09: indirect, the bytes that followed this one, and these two, before
             const quint32 d = c4_ & 0xffff;
             quint32& r1 = t1_[(d >> 8) & 255]; r1 = (r1 << 8) | quint32(c);
             quint16& r2 = t2_[(c4_ >> 8) & 0xffff]; r2 = quint16((r2 << 8) | quint32(c));
@@ -658,7 +648,7 @@ private:
         }
     }
 
-    // The line and field model: CSV and TSV, fixed-width tables, logs, source
+    // The line and field model (v09): CSV and TSV, fixed-width tables, logs, source
     // code's indentation, a dictionary's entries. The delimiter is found as the data goes:
     // of comma, semicolon, tab and '|', the one whose count per line has stayed the same line
     // after line. With none, the whole line is one field, and the contexts become "what stood
@@ -796,7 +786,7 @@ srdfnd(const quint8* p, size_t n) {
     return {b1, b2};
 }
 
-// A picture's row: in a smooth picture the byte two or three back is nearly as
+// A picture's row (v07): in a smooth picture the byte two or three back is nearly as
 // like the present one as the byte above, so srdfnd's largest score can sit at a small
 // stride. A row shows instead as a peak: a stride that scores 2% above its neighbours on
 // both sides and at least half what the byte before scores. The best such peak of 16 or
@@ -844,13 +834,13 @@ wdlinv(std::vector<quint8>& d, int wb, int s) {
     }
 }
 
-// Machine code: the target of each x86 call or jump (E8, E9) made absolute, so calls to
+// Machine code: the target of each x86 call or jump made absolute, so calls to
 // one function look alike wherever they stand. Only targets within 16 MiB either way;
 // the top byte is left as it is, so the decoder makes the same choice at every byte.
 inline void
 x86fwd(std::vector<quint8>& d, bool inv) {
     const size_t n = d.size();
-    // Every E8 or E9 consumes its four bytes, transformed or not, so no later transform
+    // Every or E9 consumes its four bytes, transformed or not, so no later transform
     // can change a byte an earlier decision read: the decoder reads what the encoder read.
     for (size_t i = 0; i + 5 <= n;) {
         if (d[i] != 0xE8 && d[i] != 0xE9) { ++i; continue; }
@@ -863,10 +853,10 @@ x86fwd(std::vector<quint8>& d, bool inv) {
     }
 }
 
-// Pictures: each byte less LOCO-I's median prediction from
+// Pictures (v07, from medimg and medvid): each byte less LOCO-I's median prediction from
 // its left, upper and upper-left neighbours, a record (a row) apart. What is left is the
-// part the picture's own geometry does not explain, as a video coder codes a frame less
-// its prediction. The inverse rebuilds each byte from neighbours already rebuilt.
+// part the picture's own geometry does not explain, as medvid codes a frame less its
+// prediction. The inverse rebuilds each byte from neighbours already rebuilt.
 inline int
 medp(const quint8* x, size_t i, size_t s) {
     const int W = i >= 1 ? x[i - 1] : 0, N = i >= s ? x[i - s] : 0, NW = i >= s + 1 ? x[i - s - 1] : 0;
@@ -885,8 +875,8 @@ medinv(std::vector<quint8>& d, int s) {
 }
 
 
-// Untouchable bytes: the byte values a block never uses (no byte of it reaches them, as
-// no number's divisors add up to an untouchable number). For each node of the byte's binary tree (1..255): 0 if both branches hold a
+// Untouchable bytes (v09,untouchables, 27 October): the byte values a block
+// never uses. For each node of the byte's binary tree (1..255): 0 if both branches hold a
 // used value, else 1 + the only branch that does.
 inline std::array<quint8, 256>
 untouch(const std::array<quint8, 32>& map) {
@@ -924,7 +914,7 @@ lgtab() {
     return t.data();
 }
 
-// Code d with settings c at level lvl. dm, when given: the one-pass estimate of each model's worth.
+// Code d with settings c at level lvl. dm, when given: W5's estimate, each model's worth.
 inline std::vector<quint8>
 cmraw(const std::vector<quint8>& d, int lvl, const cfg& c, double* dm = nullptr) {
     std::vector<quint8> o;
@@ -957,20 +947,19 @@ trl(const std::vector<quint8>& d, int s, int s2, int lvl, bool inh) {
     return cmraw(d, lvl, c).size();
 }
 
-// Which models a block can do without. Two samples of 64 KiB, a quarter and three
+// W5: which models a block can do without. Two samples of 64 KiB, a quarter and three
 // quarters in, are coded once with every model, and each model's worth estimated on the way
 // (prd::est). The models that do harm go, cheapest first, while what they are worth together
 // stays under the threshold; one more coding confirms, and if the set costs more after all,
-// the most valuable of them comes back. Two codings where cm8's choice makes up to
-// thirty.
+// the most valuable of them comes back. Two codings where v08 made up to thirty.
 //
-// Measured on the middle MiB of each Silesia file: cm8's rule (models worth under 0.02%
+// Measured on the lab's twelve samples (28 October): v08's rule (models worth under 0.02%
 // go, on two 32 KiB samples) cost the long contexts their keep on short samples: mozilla
 // 0.5% larger than keeping every model. Only the harmful, on 64 KiB: 0.06% smaller than
 // every model, the best of the five rules tried, and no file worse by more than 0.01%.
 inline quint64
 mchoose(const std::vector<quint8>& d, const cfg& c0) {
-#ifndef CM9_THR                                          // overridable, to measure other settings
+#ifndef CM9_THR                                          // the lab overrides these to measure
 #define CM9_THR 0
 #define CM9_SMP 16
 #endif
@@ -1046,7 +1035,7 @@ cmplan(std::vector<quint8>& d, int lvl, int tmx, bool wrd) {
     const size_t len = d.size();
     // srdfnd reads only the start of its input, so the sample's answers are the block's.
     auto f0 = srdfnd(src, len);
-    if (f0.first < 16 && len >= 65536) {                  // a picture's row, if a trial prefers it
+    if (f0.first < 16 && len >= 65536) {                  // a picture's row, if a trial prefers it (v07)
         const int pk = srdpeak(src, len);
         if (pk) {
             const size_t m = std::min<size_t>(len, 1 << 16), a = (len - m) / 2;
@@ -1069,7 +1058,7 @@ cmplan(std::vector<quint8>& d, int lvl, int tmx, bool wrd) {
             const size_t l = trl(t, fw[size_t(b)].first, fw[size_t(b)].second, 7, false);
             if (l + l / 50 < bst) { bst = l; wb = b; }
         }
-        if (s >= 16) {                                    // the picture filter: a win of 1% or more
+        if (s >= 16) {                                    // the picture filter (v07): a win of 1% or more
             std::vector<quint8> t = smp; medfwd(t, s);
             const size_t l = trl(t, f0.first, f0.second, 7, false);
             if (l + l / 100 < bst) { bst = l; wb = 0x20; fw[0] = f0; }
@@ -1092,7 +1081,7 @@ cmplan(std::vector<quint8>& d, int lvl, int tmx, bool wrd) {
     cfg c;
     c.s = s; c.wb = wb; c.ms = fw[size_t(wb & 15)].first; c.m2 = fw[size_t(wb & 15)].second;
     c.flg = wrd ? flgwrd : 0;
-    if (len >= 16384) {                                   // inheritance, by trial on the middle
+    if (len >= 16384) {                                   // inheritance (v06), by trial on the middle
         const size_t m = std::min<size_t>(len, 1 << 16), a = (len - m) / 2;
         std::vector<quint8> smp(d.begin() + std::ptrdiff_t(a), d.begin() + std::ptrdiff_t(a + m));
         if (trl(smp, c.ms, c.m2, 7, true) < trl(smp, c.ms, c.m2, 7, false)) c.wb |= 0x40;
@@ -1151,7 +1140,7 @@ wrdtry(const std::vector<std::pair<const quint8*, size_t>>& blk, int lvl, wrd::d
 
 // One block, at level lvl (7 to 10); tmx the largest table, bits (22, or up to 24 at the
 // extreme level). The level byte that precedes the payload in the record is the caller's.
-// a block of 1 MiB or more at levels 8 and up may carry its own word dictionary, by
+// v09: a block of 1 MiB or more at levels 8 and up may carry its own word dictionary, by
 // trial; then, after the settings, the dictionary's length (4), its coded length (4) and its
 // bytes coded at level 7, and the length of the block after the transform (4).
 inline std::vector<quint8>
@@ -1188,7 +1177,7 @@ cmdec(const quint8* p, size_t len, size_t rawlen, int lvl, std::vector<quint8>& 
     cfg c;
     size_t h = cfgget(p, len, c);
     if (!h) return false;
-    // a block with its own word dictionary.
+    // v09: a block with its own word dictionary.
     if (c.flg & flgwrd) {
         auto le32 = [&](quint32& v) { if (h + 4 > len) return false; v = 0; for (int k = 0; k < 4; ++k) v |= quint32(p[h + size_t(k)]) << (8 * k); h += 4; return true; };
         quint32 dl, dcl, tl;
@@ -1238,10 +1227,11 @@ cmdec(const quint8* p, size_t len, size_t rawlen, int lvl, std::vector<quint8>& 
 }
 
 // ------------------------------------------------------------------------------
-// Groups: the whole reflected into the blocks
+// Groups (v09): the whole reflected into the blocks
 // ------------------------------------------------------------------------------
 //
-// Blocks coded apart start as strangers, each knowing nothing of the whole. A group is a run of blocks the
+//"when we split the blocks and they become strangers, we need to have
+// an idea of how the whole is reflected to the chunks." A group is a run of blocks the
 // analysis found alike (one cluster). It is coded in two stages: the primer, the first S
 // bytes of every block end to end, coded as one stream with a fresh model; then each
 // block's remainder, every block in parallel, each starting from a copy of the model as
@@ -1250,7 +1240,7 @@ cmdec(const quint8* p, size_t len, size_t rawlen, int lvl, std::vector<quint8>& 
 // inheritance, model choice, table size), one map of the bytes used, and, for text, one
 // word dictionary, which made per block cost more than it saved.
 //
-// Measured on Silesia, each against independent 4 MiB blocks: dickens −1.64%,
+// Measured in the lab (27 October), each against independent 4 MiB blocks: dickens −1.64%,
 // webster −5.40%, mozilla −2.73%; on a file of mixed kinds a primer of everything cost
 // +0.55%, a primer per cluster −0.65%.
 

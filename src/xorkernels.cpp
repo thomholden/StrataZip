@@ -6,30 +6,36 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// xorkernels.cpp: the XOR kernels; see xorkernels.h. Each fast way is checked against
-// its table way by the self-test (stratazip --test) and by stratazip --kernels.
+// The XOR kernels; see xorkernels.h. Each fast way is checked against its
+// table way by format 07's self-test (-t) and its --kernels switch.
 
 #include "xorkernels.h"
 
 #include <array>
 #include <cstring>
+//the SIMD paths on x86 only (and not with STRATAZIP_NOSIMD, which checks the plain ones there);
+// elsewhere the plain loops, which give the same bytes.
+#if (defined(__x86_64__) || defined(__i386__)) && !defined(STRATAZIP_NOSIMD)
+#define STRATAZIP_XOR_X86 1
 #include <emmintrin.h>
 #include <smmintrin.h>
 #include <tmmintrin.h>
 #include <wmmintrin.h>
+#endif
 
 namespace {
 
 inline std::uint32_t
 rd32(const std::uint8_t* p) { std::uint32_t v; std::memcpy(&v, p, 4); return v; }
 
-// CRC-32 by carry-less multiplication, the folding method of Intel's paper (Gopal et
+// CRC-32 by carry-less multiplication (v07), the folding method of Intel's paper (Gopal et
 // al., 2009) with the constants zlib uses. A CRC is the remainder of the data, read as a
 // polynomial over GF(2), divided by the CRC's polynomial. Over GF(2) a product is ANDs
 // summed by XOR, with nothing carried from one place to the next: PCLMULQDQ is exactly
-// that, multiplication with the carry taken out. Four 128-bit lanes fold
+// that, multiplication with its hierarchy (the carry) taken out. Four 128-bit lanes fold
 // 64 bytes a step; then one lane, then a Barrett reduction to 32 bits. len: a multiple of
 // 16, at least 64. st: the CRC's running state (inverted), as the tables keep it.
+#ifdef STRATAZIP_XOR_X86
 __attribute__((target("pclmul,sse4.1")))
 std::uint32_t
 crcclm(const std::uint8_t* buf, std::size_t len, std::uint32_t st) {
@@ -75,15 +81,24 @@ crcclm(const std::uint8_t* buf, std::size_t len, std::uint32_t st) {
     x1 = _mm_xor_si128(x1, x2);
     return std::uint32_t(_mm_extract_epi32(x1, 1));
 }
+#else
+std::uint32_t crcclm(const std::uint8_t*, std::size_t, std::uint32_t st) { return st; }   // never chosen: clmavl() is false
+#endif
 
 } // namespace
 
 bool
-stratazip::xorkernels::clmavl() { static const bool a = __builtin_cpu_supports("pclmul") && __builtin_cpu_supports("sse4.1"); return a; }
+stratazip::xorkrn::clmavl() {
+#ifdef STRATAZIP_XOR_X86
+    static const bool a = __builtin_cpu_supports("pclmul") && __builtin_cpu_supports("sse4.1"); return a;
+#else
+    return false;
+#endif
+}
 
-// CRC-32 by tables, slicing by eight: the reference, and the tail of the fast way.
+// CRC-32 by tables, slicing by eight (v06): the reference, and the tail of the fast way.
 std::uint32_t
-stratazip::xorkernels::crc32tab(
+stratazip::xorkrn::crc32tab(
      const std::uint8_t*                                        dat
     ,std::size_t                                                len
     ,std::uint32_t                                              crc
@@ -110,7 +125,7 @@ stratazip::xorkernels::crc32tab(
 }
 
 std::uint32_t
-stratazip::xorkernels::crc32(
+stratazip::xorkrn::crc32(
      const std::uint8_t*                                        dat
     ,std::size_t                                                len
     ,std::uint32_t                                              crc
@@ -123,9 +138,9 @@ stratazip::xorkernels::crc32(
     return crc32tab(dat, len, crc);
 }
 
-// GF(256) products by logarithms: x is a generator for 0x11D, as in the recovery records.
+// GF(256) products by logarithms: x is a generator for 0x11D, as in StrataZip's recovery.
 std::uint8_t
-stratazip::xorkernels::gf256mul(
+stratazip::xorkrn::gf256mul(
      std::uint8_t                                               a
     ,std::uint8_t                                               b
 ) {
@@ -140,10 +155,10 @@ stratazip::xorkernels::gf256mul(
     return t.exp[std::size_t(t.log[a] + t.log[b])];
 }
 
-// dst ^= c * src, over n bytes: the plain way, a byte at a time through a 256-entry table.
+// dst ^= c * src, over n bytes: v06's way, a byte at a time through a 256-entry table.
 // Kept as the reference the fast way is checked against.
 void
-stratazip::xorkernels::gf256madtab(
+stratazip::xorkrn::gf256madtab(
      std::uint8_t*                                              dst
     ,const std::uint8_t*                                        src
     ,std::size_t                                                n
@@ -155,13 +170,14 @@ stratazip::xorkernels::gf256madtab(
     for (std::size_t i = 0; i < n; ++i) dst[i] ^= m[src[i]];
 }
 
-// The same, sixteen bytes at a time. In GF(256) addition is XOR, so multiplying by
+// The same, sixteen bytes at a time (v07). In GF(256) addition is XOR, so multiplying by
 // c distributes over a byte's two halves: c * b = c * (b & 15) XOR c * (b & 0xF0). Each
 // half has only sixteen values, so each product is one 16-entry table, and SSSE3's byte
 // shuffle looks up sixteen of them in one instruction. The sum of the two lookups is an
-// XOR, and so is the accumulation into dst, done in lanes. SSSE3 is within x86-64-v2, the build's floor.
+// XOR, and so is the accumulation into dst: the egalitarian half of the field, done in
+// lanes. SSSE3 is within x86-64-v2, the build's floor.
 void
-stratazip::xorkernels::gf256mad(
+stratazip::xorkrn::gf256mad(
      std::uint8_t*                                              dst
     ,const std::uint8_t*                                        src
     ,std::size_t                                                n
@@ -170,9 +186,10 @@ stratazip::xorkernels::gf256mad(
     if (!c) return;
     alignas(16) std::uint8_t lo[16], hi[16];
     for (int v = 0; v < 16; ++v) { lo[v] = gf256mul(std::uint8_t(v), c); hi[v] = gf256mul(std::uint8_t(v << 4), c); }
+    std::size_t i = 0;
+#ifdef STRATAZIP_XOR_X86
     const __m128i tl = _mm_load_si128(reinterpret_cast<const __m128i*>(lo)), th = _mm_load_si128(reinterpret_cast<const __m128i*>(hi));
     const __m128i m4 = _mm_set1_epi8(0x0F);
-    std::size_t i = 0;
     for (; i + 16 <= n; i += 16) {
         const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
         const __m128i pl = _mm_shuffle_epi8(tl, _mm_and_si128(b, m4));
@@ -181,5 +198,6 @@ stratazip::xorkernels::gf256mad(
         d = _mm_xor_si128(d, _mm_xor_si128(pl, ph));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i), d);
     }
+#endif
     for (; i < n; ++i) dst[i] ^= std::uint8_t(lo[src[i] & 15] ^ hi[src[i] >> 4]);
 }

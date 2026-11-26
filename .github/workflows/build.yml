@@ -31,6 +31,51 @@ jobs:
             build/*.deb
             build/*.tar.gz
 
+  linux-arm64:
+    # Gate line 7 (DATAFLOW-ZIP.md §21.13): ARM64 decodes the golden set to the same bytes. The self-test
+    # reads every golden archive (made on x86-64) against the digests stored with it, and checks the
+    # rest of the quick tier on a machine with no SSE: the mixers' plain path (src: smd.h), SHA-256's
+    # and the XOR kernels' plain paths. Built and tested only: no ARM64 package is released.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6 and CMake
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+      - name: Self-test (the golden archives among it)
+        run: build/stratazip --test
+      - name: An archive made here reads on x86-64 too
+        run: |
+          head -c 3000000 /dev/urandom > r
+          build/stratazip -l 9 -c r r.stz && build/stratazip -v r.stz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stratazip-arm64-made
+          path: |
+            r
+            r.stz
+
+  arm64-to-x86:
+    # The other way: the archive ARM64 made, read by the x86-64 build, to the same bytes.
+    needs: [linux, linux-arm64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-linux-x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-arm64-made
+      - name: Read it here
+        run: |
+          sudo apt-get update && sudo apt-get install -y libqt6core6t64 || sudo apt-get install -y libqt6core6
+          tar -xzf stratazip-*.tar.gz
+          z=$(find . -path '*/bin/stratazip' -type f | head -1)
+          "$z" -d r.stz r2 && cmp r r2 && echo "ARM64's archive reads on x86-64 to the same bytes"
+
   install-test:
     # The .deb must install and run on every supported release, not only the one it was
     # built on.

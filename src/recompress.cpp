@@ -6,8 +6,10 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// recompress.cpp: the one place that sees zlib (zlib/, built with Z_PREFIX), so its macros
-// never meet the rest of StrataZip. See recompress.h.
+// dfl's implementation: the one place that sees zlib (zlb/, built with Z_PREFIX), so its
+// macros never meet the rest of StrataZip. See recompress.h.
+//
+// Signed, 28 October 2026.
 
 #include "recompress.h"
 

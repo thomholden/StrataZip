@@ -8902,7 +8902,7 @@ stratazip::Archiver::arcinfo(
         }
         else if (stt == "signing_cut_short") out << QString("state: whole, but for a signing cut short (%1 bytes after the last commit), which the next writer cuts: nothing but that signature is lost").arg(jw.len - jw.end);
         else if (stt == "torn_tail") out << QString("state: whole, but for a torn tail of %1 bytes (a write cut short before its commit), which the next writer cuts: nothing acknowledged is lost").arg(jw.len - jw.end);
-        else out << QStringLiteral("state: whole: every commit reached, nothing read from a copy");
+        else out << QStringLiteral("state: whole: every commit reached, nothing read from a copy; the data is not decoded here (-v checks it; -v --quick without decoding)");
     }
     if (jsn) {
         QJsonObject j, cm, gr;

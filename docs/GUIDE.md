@@ -66,7 +66,7 @@ june-logs.stz:
   end: 7678001 bytes in 1 data blocks, checked by the CRC-32 of each and of the whole
   properties (the first copy): level 4; id dbb9faaee640cd5475494d79a172ecfc; generation 0; written by StrataZip 1.2.0; made 2026-11-26T20:03:24Z; recovery 0%; paths UTF-8
   features: must-read: none; must-write: none; may-ignore: owners
-  state: whole: every commit reached, nothing read from a copy
+  state: whole: every commit reached, nothing read from a copy; the data is not decoded here (-v checks it; -v --quick without decoding)
 ```
 
 **Worth knowing:** levels 9 and 10 are as slow to open as to make. Keep them for data you
@@ -309,7 +309,7 @@ $ stratazip -r 5 -c project safe.stz
       LZMA-class    1 block(s):      2095258 ->       434642 bytes (20.7%)
 $ printf 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | dd of=safe.stz bs=1 seek=300000 conv=notrunc status=none
 $ stratazip -v safe.stz
-safe.stz: NEEDS REPAIR, 26 files, 0 directories, 0 links, 2095258 bytes; 0 stored once for more than one path, every SHA-256 checked; damaged (block 0 (bytes from 0): LZMA-class block corrupt), within its recovery records' reach: mended in memory, every commit read whole through them, nothing lost (--repair <archive> <copy> writes it back); the base's digest (at byte 461821) does not match the base: a byte that no decoder reads has changed (--repair mends it from recovery records)
+safe.stz: NEEDS REPAIR, 26 files, 0 directories, 0 links, 2095258 bytes; 0 stored once for more than one path, every SHA-256 checked; damaged (block 0 (bytes from 0): LZMA-class block corrupt), within its recovery records' reach: mended in memory, every commit read whole through them, nothing lost (--repair <archive> <copy> writes it back)
 [exit 3]
 $ stratazip --repair safe.stz mended.stz
 1 damaged shard(s) rebuilt
@@ -526,8 +526,9 @@ mount options:
   --cache MiB                    decoded blocks kept (default a quarter of free memory, at most 1 GiB)
   -v, --verify                   check a file's SHA-256 before serving any of it
 exit status:
-  0 done; 1 failed, or nothing found (--search, --diff, --salvage that lost a file); 2 not done
-  (an error or a refusal; the archive unchanged); 3 done, but the archive needs --repair: its
-  journal is damaged (the commits after the damage are out of reach, and what was read is the
-  tree before it), or a commit, the properties or a record header was read from its copy
+  0 done; 1 failed, or nothing found (--search, --diff, --salvage that lost a file), or a
+  --two-way sync that kept a conflict; 2 not done (an error or a refusal; the archive unchanged);
+  3 done, but the archive needs --repair: its journal is damaged (the commits after the damage
+  are out of reach, and what was read is the tree before it), or a commit, the properties or a
+  record header was read from its copy
 ```

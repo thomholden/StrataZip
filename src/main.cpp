@@ -410,10 +410,11 @@ hlp() {
         << "  --cache MiB                    decoded blocks kept (default a quarter of free memory, at most 1 GiB)\n"
         << "  -v, --verify                   check a file's SHA-256 before serving any of it\n"
         << "exit status:\n"
-        << "  0 done; 1 failed, or nothing found (--search, --diff, --salvage that lost a file); 2 not done\n"
-        << "  (an error or a refusal; the archive unchanged); 3 done, but the archive needs --repair: its\n"
-        << "  journal is damaged (the commits after the damage are out of reach, and what was read is the\n"
-        << "  tree before it), or a commit, the properties or a record header was read from its copy\n";
+        << "  0 done; 1 failed, or nothing found (--search, --diff, --salvage that lost a file), or a\n"
+        << "  --two-way sync that kept a conflict; 2 not done (an error or a refusal; the archive unchanged);\n"
+        << "  3 done, but the archive needs --repair: its journal is damaged (the commits after the damage\n"
+        << "  are out of reach, and what was read is the tree before it), or a commit, the properties or a\n"
+        << "  record header was read from its copy\n";
 }
 
 // One round trip, reported. Returns false on any mismatch.
@@ -8768,7 +8769,7 @@ mainrun(int argc, char* argv[]) {
         pos = px;
     }
     if (mod == "v" && !pos.isEmpty()) {
-        bool ok = !shdbad, nrp = false, nrp1 = false;
+        bool ok = !shdbad, nrp = false, nrp1 = false, mnd = false;
         for (const QString& p : pos) {
             QFile src(p);
             stratazip::Archiver::rsl r;
@@ -8846,12 +8847,15 @@ mainrun(int argc, char* argv[]) {
                             r.oky_ = true;
                             r.msg_.clear();
                             nrp1 = true;
+                            mnd = true;
                         }
                     }
                     ov.close();
                 }
             }
-            if (r.oky_ && src.isOpen()) {                  //the base's digest: the bytes no decoder reads
+            // Not after a mend in memory: the file on disk still holds the damage just reported,
+            // so its digest cannot match, and blaming "a byte that no decoder reads" would contradict it.
+            if (r.oky_ && !mnd && src.isOpen()) {          //the base's digest: the bytes no decoder reads
                 QString dw;
                 const int dg = stratazip::Archiver::arcdig(src, dw);
                 // a changed byte that no decoder reads: every file checks, nothing is lost, but the
@@ -8875,6 +8879,7 @@ mainrun(int argc, char* argv[]) {
             ok = ok && r.oky_;
             nrp = nrp || nrp1;
             nrp1 = false;
+            mnd = false;
         }
         return ok ? (nrp ? 3 : 0) : 1;
     }

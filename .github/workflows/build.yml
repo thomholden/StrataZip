@@ -71,7 +71,7 @@ jobs:
           name: stratazip-arm64-made
       - name: Read it here
         run: |
-          sudo apt-get update && sudo apt-get install -y libqt6core6t64 || sudo apt-get install -y libqt6core6
+          sudo apt-get update && (sudo apt-get install -y libqt6core6t64 libqt6concurrent6t64 || sudo apt-get install -y libqt6core6 libqt6concurrent6)
           tar -xzf stratazip-*.tar.gz
           z=$(find . -path '*/bin/stratazip' -type f | head -1)
           "$z" -d r.stz r2 && cmp r r2 && echo "ARM64's archive reads on x86-64 to the same bytes"

@@ -355,6 +355,12 @@ For writing about StrataZip: the logo as a vector, [assets/stratazip.svg](assets
 and as PNGs in [assets/](assets/) (`icon-32` and `icon-64` are the mark alone; `icon-128`
 to `icon-1024` are the mark over the name), with the banner and the social card.
 
+The StrataZip name and logo are trademarks of Steven Thomas Holden. They are not licensed
+under the AGPL-3.0 or the commercial licence, which cover the code and its documents. You
+may use them to refer to StrataZip: in an article or a review, beside a link to the
+project, or for a package of StrataZip as released. You may not use them as the name or
+logo of a fork, a modified version or another product; give it a name of its own.
+
 ## Support the project
 
 StrataZip is made by one independent developer. Buying a commercial licence, or

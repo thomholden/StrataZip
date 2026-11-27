@@ -40,9 +40,11 @@ Each one is walked through with real output in **[the guide](docs/GUIDE.md)**.
   stands in its line and field; 16-bit images to a picture coder that finds the width
   and byte order itself; 16-bit audio to a waveform coder; DNA to a two-bit coder that
   learns both strands. Nothing is guessed from a file name.
+<!-- bench:readme-measured -->
 - **Measured against zpaq, xz, 7-Zip and zstd.** On the Silesia corpus
   level 9 is 7.4% under zpaq's strongest mode and level 10 12.7% under, the smallest of every
   tool on all twelve files. On market data, 26.7% under zpaq; on sensor logs, 8.9%.
+<!-- /bench:readme-measured -->
 - **It sees inside ZIP, JAR, DOCX, gzip and PDF files.** Their deflate streams are
   unwrapped and compressed as what they hold, wherever the bundled zlib can rebuild them
   bit for bit on extraction; the rest are kept as they are.
@@ -81,11 +83,14 @@ compared byte for byte (FLAC's on their audio samples). The Silesia numbers are 
 [`bench/run.sh`](bench/run.sh) on public data. [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
 has the full tables, the machine, and the caveats.
 
+<!-- bench:readme-research -->
 The research compressors cmix and paq8px publish smaller results on these corpora; they
 were not run here.
+<!-- /bench:readme-research -->
 
 ### Structured data, genomes and text
 
+<!-- bench:readme-struct -->
 | Data | Size | xz -9e | zstd -19 | zpaq -m5 | **StrataZip&nbsp;-l&nbsp;9** | **StrataZip&nbsp;-l&nbsp;10** |
 |---|---:|---:|---:|---:|---:|---:|
 | Bitcoin price history, 2017 to 2025, CSV | 2,575,631 | 153,772 | 200,502 | 113,063 | 82,925 | **82,818** |
@@ -95,14 +100,17 @@ were not run here.
 
 On enwik8 zpaq -m5 beats level 9 by 1.6%; level 10, which sees the file in two blocks
 rather than twenty-four, is 4.7% under it.
+<!-- /bench:readme-struct -->
 
 ### Audio: smaller than FLAC
 
+<!-- bench:readme-audio -->
 | Recording (16-bit PCM) | Size | FLAC -8 | **StrataZip** | |
 |---|---:|---:|---:|---:|
 | Field recordings, ten ESC-50 clips | 4,410,078 | 1,880,800 | **1,784,415** | **−5.1%** |
 | Pop song, 30 s (decoded from MP3) | 5,292,162 | 3,613,378 | **3,400,260** | **−5.9%** |
 | Pop song, 30 s (decoded from MP3) | 5,292,184 | 3,095,882 | **2,874,306** | **−7.2%** |
+<!-- /bench:readme-audio -->
 
 The audio coder runs at every level; these are level 4. FLAC decodes much faster, so
 StrataZip is for keeping audio, not for playing it.
@@ -111,6 +119,7 @@ StrataZip is for keeping audio, not for playing it.
 
 The standard corpus of mixed real data (12 files, 212 MB).
 
+<!-- bench:readme-silesia -->
 | Tool | Size (MB) | Ratio | Compress (MB/s) | Decompress (MB/s) |
 |---|---:|---:|---:|---:|
 | gzip -9 | 67.63 | 3.134 | 9.45 | 133.11 |
@@ -128,7 +137,10 @@ The standard corpus of mixed real data (12 files, 212 MB).
 | **StrataZip -l 10** | 34.16 | 6.205 | 0.06 | 0.10 |
 
 Levels 9 and 10 are the smallest, and the slowest: zpaq -m5 compresses at 0.39 MB/s
-here, StrataZip's level 9 at 0.08, on one thread. Two of the files (`mr`, `x-ray`) are
+here, StrataZip's level 9 at 0.08, on one thread.
+<!-- /bench:readme-silesia -->
+
+Two of the files (`mr`, `x-ray`) are
 16-bit medical images, which StrataZip codes with its picture coder at every level, so
 even level 4 makes them smaller than any other tool does. Per-file results are
 in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).

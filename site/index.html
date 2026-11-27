@@ -13,7 +13,9 @@
   <link rel="apple-touch-icon" href="assets/icon-256.png">
   <meta property="og:type" content="website">
   <meta property="og:title" content="StrataZip: measured compression, living archives, traceable data">
+  <!-- bench:site-og -->
   <meta property="og:description" content="7.4% under zpaq's strongest mode on the Silesia corpus, 26.7% on market data, 5 to 7% under FLAC on audio. Open source (AGPL-3.0) with a commercial licence.">
+  <!-- /bench:site-og -->
   <meta property="og:url" content="https://stratazip.com/">
   <meta property="og:image" content="https://stratazip.com/assets/social.png">
   <meta property="og:image:width" content="1280">
@@ -72,19 +74,23 @@
       rerun from the repository on public data.</p>
 
     <div class="stats">
+      <!-- bench:site-tiles -->
       <div class="stat"><div class="n">7.4%</div><div class="t">smaller than zpaq -m5, zpaq's strongest mode, on the Silesia corpus at level 9, and on every one of its twelve files</div></div>
       <div class="stat"><div class="n">12.7%</div><div class="t">smaller than zpaq -m5 on Silesia at the extreme level, the smallest of every tool tested on all twelve files</div></div>
       <div class="stat"><div class="n">26.7%</div><div class="t">smaller than zpaq -m5 on a Bitcoin price history in CSV; 8.9% on bicycle sensor logs</div></div>
       <div class="stat"><div class="n">242</div><div class="t">round trips behind these pages, every one checked byte for byte</div></div>
+      <!-- /bench:site-tiles -->
     </div>
 
     <div class="chart">
+      <!-- bench:site-bars -->
       <h3>Bitcoin price history, 2017 to 2025, CSV (2,575,631 bytes)</h3>
       <p class="note">Compressed size in bytes; shorter is better.</p>
       <div class="bar"><span class="lbl">zstd -19</span><span class="track"><span class="fill" style="width:100.0%; display:block"></span></span><span class="val">200,502</span></div>
       <div class="bar"><span class="lbl">xz -9e</span><span class="track"><span class="fill" style="width:76.7%; display:block"></span></span><span class="val">153,772</span></div>
       <div class="bar"><span class="lbl">zpaq -m5</span><span class="track"><span class="fill" style="width:56.4%; display:block"></span></span><span class="val">113,063</span></div>
       <div class="bar us"><span class="lbl">StrataZip -l 9</span><span class="track"><span class="fill" style="width:41.4%; display:block"></span></span><span class="val">82,925</span></div>
+      <!-- /bench:site-bars -->
     </div>
 
     <div class="two">
@@ -93,11 +99,13 @@
           <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Structured data, text and audio (bytes)</caption>
           <thead><tr><th>Data</th><th>Best other</th><th>StrataZip</th></tr></thead>
           <tbody>
+            <!-- bench:site-struct -->
             <tr><td>Bicycle sensor logs (Bike&amp;Safe)</td><td>11,540,076 <small>zpaq</small></td><td><b>10,516,775</b> <small>-l 9</small></td></tr>
             <tr><td><i>E. coli</i> genome</td><td>1,114,234 <small>zpaq</small></td><td><b>1,099,133</b> <small>-l 9</small></td></tr>
             <tr><td>enwik8, 100 MB of Wikipedia</td><td>19,625,015 <small>zpaq</small></td><td><b>18,700,345</b> <small>-l 10</small></td></tr>
             <tr><td>Field recordings, ten ESC-50 clips</td><td>1,880,800 <small>FLAC</small></td><td><b>1,784,415</b> <small>-l 4</small></td></tr>
             <tr><td>Two pop songs, 30 s each</td><td>6,709,260 <small>FLAC</small></td><td><b>6,274,566</b> <small>-l 4</small></td></tr>
+            <!-- /bench:site-struct -->
           </tbody>
         </table>
       </div>
@@ -106,6 +114,7 @@
           <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Silesia corpus, 212 MB (MB, smaller is better)</caption>
           <thead><tr><th>Tool</th><th>Size</th><th>Ratio</th></tr></thead>
           <tbody>
+            <!-- bench:site-silesia -->
             <tr class="us"><td>StrataZip -l 10</td><td>34.16</td><td>6.205</td></tr>
             <tr class="us"><td>StrataZip -l 9</td><td>36.23</td><td>5.850</td></tr>
             <tr><td>zpaq -m5</td><td>39.11</td><td>5.419</td></tr>
@@ -114,17 +123,18 @@
             <tr><td>7z -mx=9</td><td>48.76</td><td>4.347</td></tr>
             <tr><td>zstd --ultra -22 --long=27</td><td>52.52</td><td>4.035</td></tr>
             <tr><td>gzip -9</td><td>67.63</td><td>3.134</td></tr>
+            <!-- /bench:site-silesia -->
           </tbody>
         </table>
       </div>
     </div>
 
-    <p class="caveat">The honest part: levels 9 and 10 are slow, and as slow to open as to make,
+    <p class="caveat"><!-- bench:site-honest -->The honest part: levels 9 and 10 are slow, and as slow to open as to make,
       like zpaq and cmix; zpaq -m5 compresses about five times as fast as level 9 and decompresses
       about four times as fast. They are for archives
       you keep. On enwik8 zpaq -m5 beats level 9 by 1.6%; level 10 is the figure above. The research
       compressors cmix and paq8px publish smaller results on these corpora; they were not run here. The
-      Bitcoin file is private and available on request to anyone who wants to check the result.
+      Bitcoin file is private and available on request to anyone who wants to check the result.<!-- /bench:site-honest -->
       Full tables, the machine and every caveat:
       <a href="https://github.com/thomholden/StrataZip/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
   </div>

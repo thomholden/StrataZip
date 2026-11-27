@@ -331,7 +331,8 @@ stratazip --help                               every option
 
 Useful options: `-r 5` adds recovery records (5%), so damage can be mended; `-j` sets the
 threads; `-q` keeps it quiet. Every option, with what it does, is in
-[the guide](docs/GUIDE.md#every-option) and in `stratazip --help`.
+[the guide](docs/GUIDE.md#every-option), in `stratazip --help`, and once installed in
+`man stratazip`.
 
 ## Licensing
 

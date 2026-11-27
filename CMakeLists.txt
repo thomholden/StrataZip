@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# StrataZip: maximum-ratio archiving. Build: cmake -B build && cmake --build build
+# StrataZip: measured compression, living archives, traceable data. Build: cmake -B build && cmake --build build
 cmake_minimum_required(VERSION 3.19)
-project(StrataZip VERSION 1.2.0 DESCRIPTION "Maximum-ratio file and directory archiver" LANGUAGES C CXX)
+project(StrataZip VERSION 1.2.0 DESCRIPTION "Measured compression, living archives, traceable data" LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -96,7 +96,10 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS stratazip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES README.md LICENSE COMMERCIAL.md COMMERCIAL-LICENSE.md THIRD-PARTY-NOTICES.md CHANGELOG.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES README.md LICENSE COMMERCIAL.md COMMERCIAL-LICENSE.md THIRD-PARTY-NOTICES.md CHANGELOG.md SECURITY.md
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES docs/GUIDE.md docs/FORMAT.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES docs/stratazip.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 # Self-test: ctest runs the quick tier (seconds; the golden archives among it). --test=full is the
 # whole of it (about an hour).
@@ -114,6 +117,8 @@ set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 # libqt6concurrent6), and a package built on one release must install on the others.
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
     "libc6 (>= 2.34), libstdc++6 (>= 11), libgcc-s1, libqt6core6t64 (>= 6.4) | libqt6core6 (>= 6.4), libqt6concurrent6t64 (>= 6.4) | libqt6concurrent6 (>= 6.4)")
+# The drive (--mount) needs fusermount3; everything else runs without it.
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "fuse3")
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/thomholden/StrataZip")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)

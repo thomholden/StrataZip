@@ -13888,8 +13888,10 @@ stratazip::Archiver::arcqck(
             amb << QString("base: the header of the record at %1 is changed (the recovery records place the change and mend it): what follows is not framed here; -v (which reads through the mend) decides").arg(at);
             break;
         }
-        //the end record with its mode changed: known by its length and its payload's CRC, as -v knows it
-        if (!first && at + 29 <= n && b[at + 8] != 0x7F && u32(at) == 0 && u32(at + 4) == 16 && crc(at + 13, 16) == u32(at + 9) && placed(at, at + 13) == 1) {
+        // The end record with its mode changed: known by its length and its payload's CRC, as -v knows it,
+        // whether or not a recovery record covers it (census, -t on the test machine: without -r only the
+        // file lists have recovery records, and -v and --repair know the end record by these alone)
+        if (!first && at + 29 <= n && b[at + 8] != 0x7F && !known(b[at + 8]) && u32(at) == 0 && u32(at + 4) == 16 && crc(at + 13, 16) == u32(at + 9)) {
             rep << QString("base: the end record at %1 is damaged (its mode; the reader finds the base's end without it)").arg(at);
             mark(at, at + 29);
             spans.push_back({at + 13, at + 29, 0x7F});

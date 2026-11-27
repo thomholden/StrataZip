@@ -51,7 +51,7 @@ come from the benchmark rerun on the final build, and are added here then.*
   `--expect-commit` refuses a rolled-back archive.
 - Every primitive written from its standard and checked against the standards' published
   answers, NIST's ACVP vectors included. SECURITY.md says what the seal protects and what it
-  does not; an outside review is planned.
+  does not; an outside review is asked for below.
 
 **Compression:**
 
@@ -74,6 +74,20 @@ archive's own properties, feature bits, a step-over range of record modes, and a
 area in file lists. A reader of 1.2 opens the archives of later versions and says exactly
 what, if anything, it cannot read. `lab/wlk.py`, written from that page alone, walks an
 archive and gives the reader's verdicts.
+
+**Platforms:** 64-bit ARM builds from source, and CI checks it on every change: it passes the
+self-test there, decodes the reference archives to the same bytes, and an archive made on ARM
+reads on x86 to the same bytes. Releases stay x86-64.
+
+**Documentation:** `docs/GUIDE.md` walks through six jobs with their real output (data kept
+small, a signed nightly backup, an archive as a drive with a locked folder, two machines in
+step, search, and damage mended and salvaged). A manual page, written from `--help`, is
+installed with the guide, `docs/FORMAT.md` and `SECURITY.md`.
+
+**The benchmark:** `bench/run.sh` covers every public table: Silesia, the classic corpora, a
+folder against its files and a folder of alike files, audio, enwik9, and files of your own.
+paq8px, bsc, kanzi and 7-Zip's PPMd join the tools (`bench/tools.sh` builds the first three),
+and `bench/pages.py` writes every figure on the pages from the results.
 
 **The self-test** is in every build, in three tiers: `--test` (seconds), `--test=medium`
 (minutes) and `--test=full` (about an hour, every check). Its test switches are honoured only

@@ -24,9 +24,13 @@ The standard corpus of mixed real data: text, a database, executables, XML, medi
 images, an astronomical catalogue. 12 files, 211,938,580 bytes. Reproduce with:
 
 ```
-bench/run.sh build/stratazip
-python3 bench/table.py bench/results.txt
+bench/run.sh build/stratazip silesia
+python3 bench/table.py bench/results/silesia.txt
 ```
+
+The other public tables are sets of the same script: `classic`, `folders`, `audio` and
+`enwik9` (`bench/run.sh build/stratazip classic folders audio`). `bench/tools.sh` builds
+paq8px, bsc and kanzi at pinned versions; paq8px runs only with `BENCH_STRONG=1`.
 
 ### Totals
 

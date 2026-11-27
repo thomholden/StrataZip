@@ -25,7 +25,7 @@ $ stratazip -d prices.stz prices.csv
 | The job | The commands |
 |---|---|
 | **Keep years of tables and logs small**, and take one file back out | `stratazip -l 9 -c logs logs.stz` · `--get logs.stz day-17.log out.log` |
-| **A nightly backup** that mends a bad sector, proves nobody changed it, and gives back last Tuesday | `-r 5 -c project backup.stz --sign-with me.key`, then nightly `--sync project backup.stz` · `--at <time> --get` |
+| **A nightly backup** that mends a bad sector, shows it is unchanged since you signed it, and gives back last Tuesday | `-r 5 -c project backup.stz --sign-with me.key`, then nightly `--sync project backup.stz` · `--at <time> --get` |
 | **An archive you use as a drive**, with one folder locked | `--mount office.stz ~/office --rw` · `--seal office.stz hr --lock hr -p` |
 | **Two machines in step** through one archive, text edits merged | `--sync ~/notes ssh://host/shared.stz --two-way` |
 | **Find things without unpacking**, or hand a language model the passages that answer | `-c docs docs.stz --index` · `--search "words" docs.stz --passages` |
@@ -66,8 +66,9 @@ Each one is walked through with real output in **[the guide](docs/GUIDE.md)**.
   one. Damage is told from a crash (with recovery records or a signature, always): it is
   reported, nothing writes over it, and `--repair` or `--salvage` gets your files back.
 - **Locks and signatures.** XChaCha20-Poly1305 locks opened and shut at will, even on a
-  mounted archive; signatures by Ed25519 and ML-DSA-65 together, so they stay sound if
-  either falls.
+  mounted archive; signatures by Ed25519 and ML-DSA-65 together, so forging one means
+  breaking both. New in 1.2 and not yet reviewed outside the project: see
+  [SECURITY.md](SECURITY.md) before you rely on them.
 - **Search inside an archive.** An index of its words, kept current by every commit:
   `--search` ranks the files without decoding them, and `--search --passages` hands a
   language model the passages that answer, within a budget of words.

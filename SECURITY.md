@@ -49,8 +49,10 @@ other key is refused as forged. A record that has been changed is refused before
 is used: the self-test changes every byte of every sealed record, key record and signature
 record in turn, making the record's CRC and the journal's commit good so only the seal can
 tell, and every change is refused (or, in a key record, falls in a way the reader does not
-use and changes nothing). Whether a wrong key and a damaged record can be told apart by how
-long their refusal takes has not been measured; it is among the questions in
+use and changes nothing). The self-test times a wrong key against a damaged record (a 64 KiB
+sealed record, 1,500 of each, interleaved) and fails if their medians differ by more than a
+quarter; on our machines they agree within half a percent. That is a coarse check, not a proof
+that the two cannot be told apart: a finer measurement is among the questions in
 [`docs/REVIEW.md`](docs/REVIEW.md).
 
 **What stays visible without the key**: that the archive has a lock, its name (a lock's

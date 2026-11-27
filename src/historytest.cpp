@@ -385,7 +385,7 @@ quick(const chkf& chk, const QString& t, int step) {
         for (qint64 i = 0; i < A.size(); i += step) pos.push_back(i);
         // The end record's mode byte always: every step-th byte reached it in about one run in five, by
         // where the archive's random id put it (-t on the test machine failed there)
-        const auto le32 = [&](qint64 i) { quint32 v; std::memcpy(&v, A.constData() + i, 4); return v; };
+        const auto le32 = [&](qint64 i) { return quint32(quint8(A[i])) | quint32(quint8(A[i + 1])) << 8 | quint32(quint8(A[i + 2])) << 16 | quint32(quint8(A[i + 3])) << 24; };
         for (qint64 i = 0; i + 29 <= A.size(); ++i)
             if (quint8(A[i + 8]) == 0x7F && le32(i) == 0 && le32(i + 4) == 16 && (i + 8) % step) pos.push_back(i + 8);
         std::atomic<int> dis{0}, tot{0};

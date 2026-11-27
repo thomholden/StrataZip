@@ -763,9 +763,12 @@ private:
         const __int128 det = __int128(a) * c - __int128(b) * b;
         qint64 p = v1;
         if (det > 0) {
+            // tn * tn and 4 * nn * det can pass 2^127. The archives of format 11 were written with the
+            // products wrapped, so they stay wrapped: in unsigned arithmetic, defined, to the same bits.
+            const auto wml = [](__int128 x, __int128 y) { return __int128((unsigned __int128)x * (unsigned __int128)y); };
             const __int128 tn = __int128(d) * c - __int128(b) * e, nn = __int128(b) * d - __int128(a) * e;
             const __int128 q = (__int128(u[size_t(n - 1)]) * tn - __int128(u[size_t(n - 2)]) * nn) / det;
-            if (q <= 4 * __int128((mu >> sh) + 1) && q >= -4 * __int128((mu >> sh) + 1)) { p = m + qint64(q) * (qint64(1) << sh); rg_ = (tn * tn < 4 * nn * det) ? 1 : 2; }
+            if (q <= 4 * __int128((mu >> sh) + 1) && q >= -4 * __int128((mu >> sh) + 1)) { p = m + qint64(q) * (qint64(1) << sh); rg_ = (wml(tn, tn) < wml(wml(4, nn), det)) ? 1 : 2; }
         }
         prl_ = numtxt(p, d1, cl, prr_);
     }

@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt 6 and CMake
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt 6 and CMake
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -75,7 +75,7 @@ jobs:
           name: stratazip-arm64-made
       - name: Read it here
         run: |
-          sudo apt-get update && (sudo apt-get install -y libqt6core6t64 libqt6concurrent6t64 || sudo apt-get install -y libqt6core6 libqt6concurrent6)
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && (sudo apt-get install -y libqt6core6t64 libqt6concurrent6t64 || sudo apt-get install -y libqt6core6 libqt6concurrent6)
           tar -xzf stratazip-*.tar.gz
           z=$(find . -path '*/bin/stratazip' -type f | head -1)
           "$z" -d r.stz r2 && cmp r r2 && echo "ARM64's archive reads on x86-64 to the same bytes"
@@ -93,7 +93,7 @@ jobs:
         with:
           name: stratazip-linux-x86_64
       - name: Install the package and FUSE
-        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./stratazip_*_amd64.deb fuse3
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./stratazip_*_amd64.deb fuse3
       - name: The drive and the thread counts
         run: bash .github/ci/drive.sh stratazip
 

@@ -33,21 +33,25 @@ fixed, a sealed and signed one among them, that every build must read.
 ## The seal: what it protects, and what it does not
 
 Locks and signatures are written out field by field in [`docs/FORMAT.md`](docs/FORMAT.md),
-"The seal". This section says what they are for.
+"The seal". This section says what they are designed to do. They are new in 1.2 and have not
+yet been reviewed outside the project (see "Review", below): read what follows as what we
+built and tested, not as what an outside reviewer has confirmed.
 
 **A lock** keeps some files of an archive, or all of them, sealed: their names, their
 metadata (sizes, times, modes, owners, links) and their data. It is opened by a password
 (Argon2id), by a public key (X25519 and ML-KEM-768 together, so a recording made today
 stays sealed if either is broken later), or by both; a lock may have many ways in. Each
 record is sealed on its own with XChaCha20-Poly1305 and bound to its archive, lock,
-segment and place, so records cannot be moved, swapped or replayed into another archive.
+segment and place, so that a record moved, swapped or replayed into another archive is refused.
 A small header with a tag of its own carries the record's lengths and kind, and nothing
 acts on it before its tag passes. A lock commits to its key, so a way in that opens to any
 other key is refused as forged. A record that has been changed is refused before any of it
 is used: the self-test changes every byte of every sealed record, key record and signature
 record in turn, making the record's CRC and the journal's commit good so only the seal can
 tell, and every change is refused (or, in a key record, falls in a way the reader does not
-use and changes nothing). A wrong key and a damaged record are refused in the same time.
+use and changes nothing). Whether a wrong key and a damaged record can be told apart by how
+long their refusal takes has not been measured; it is among the questions in
+[`docs/REVIEW.md`](docs/REVIEW.md).
 
 **What stays visible without the key**: that the archive has a lock, its name (a lock's
 name can be hidden in a later version; the format keeps a bit for it), how many ways in it

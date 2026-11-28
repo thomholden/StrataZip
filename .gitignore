@@ -1,9 +1,11 @@
 /build/
 /build-*/
-/bench/silesia/
-/bench/results.txt
+/bench/data/
+/bench/results/
+/bench/tools/
 *.stz
 *.o
 CMakeLists.txt.user
 .vscode/
 .idea/
+__pycache__/

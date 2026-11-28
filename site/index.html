@@ -4,16 +4,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>StrataZip: maximum-ratio archiving</title>
-  <meta name="description" content="StrataZip is a Linux archiver that picks the best coder for every block. Among the tools tested, the smallest archives on the Silesia corpus and on CSV, sensor and market data, audio and genomes, with verification and repair built in.">
+  <meta name="theme-color" content="#1d2124">
+  <title>StrataZip: measured compression, living archives, traceable data</title>
+  <meta name="description" content="StrataZip tries the coders on every block and keeps the one that measures smallest, in an archive you can mount, sync, lock, mend and search, with every change a hashed commit you can sign and trace back. Open source, for Linux.">
   <link rel="canonical" href="https://stratazip.com/">
-  <link rel="icon" type="image/png" href="assets/icon-64.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
   <link rel="apple-touch-icon" href="assets/icon-256.png">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="StrataZip: maximum-ratio archiving">
+  <meta property="og:title" content="StrataZip: measured compression, living archives, traceable data">
+  <!-- bench:site-og -->
   <meta property="og:description" content="7.4% under zpaq's strongest mode on the Silesia corpus, 26.7% on market data, 5 to 7% under FLAC on audio. Open source (AGPL-3.0) with a commercial licence.">
+  <!-- /bench:site-og -->
   <meta property="og:url" content="https://stratazip.com/">
-  <meta property="og:image" content="https://stratazip.com/assets/banner.png">
+  <meta property="og:image" content="https://stratazip.com/assets/social.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="StrataZip: measured compression, living archives, traceable data">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -24,6 +31,7 @@
     <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="36" height="36"><span>Strata<b>Zip</b></span></a>
     <nav aria-label="Main">
       <a href="#benchmarks" class="hide-s">Benchmarks</a>
+      <a href="#uses" class="hide-s">Uses</a>
       <a href="https://github.com/thomholden/StrataZip/releases/latest">Download</a>
       <a href="https://github.com/thomholden/StrataZip#readme" class="hide-s">Docs</a>
       <a href="https://github.com/thomholden/StrataZip">GitHub</a>
@@ -38,22 +46,21 @@
   <div class="wrap">
     <div>
       <h1>Strata<span>Zip</span></h1>
-      <p class="lede">The smallest archives of the tools we tested, on the standard corpus and on structured data.</p>
-      <p class="sub">CSV, logs, sensor and market data, audio and genomes: StrataZip tries several
-        coders on every block, keeps the one that wins, and checks every byte on the way out.
-        The smallest of the tools we tested on the mixed files of the Silesia corpus too,
-        with verification and repair built in.</p>
+      <p class="lede">Measured compression. Living archives. Traceable data.</p>
+      <p class="sub">Each block goes to the coder that measures smallest. The archive keeps living:
+        mounted, synced, locked and mended, with every change a hashed commit you can sign and
+        trace back.</p>
       <div class="actions">
         <a class="btn btn-buy btn-big" href="https://buy.polar.sh/polar_cl_TdyygtE7vRQPSmICHFd2XKVP4a7QcoTfSLvcU0vBhZL">Buy Commercial Licence</a>
         <a class="btn btn-plain" href="https://github.com/thomholden/StrataZip/releases/latest">Download free</a>
       </div>
       <p class="fine">Free and open source under the AGPL-3.0. Most people never need to pay:
-        <a href="#need">see who does</a>. Linux x86-64 today; Windows, macOS and a desktop app are planned.</p>
+        <a href="#need">see who does</a>. Linux x86-64 today, and 64-bit ARM from source; Windows, macOS and a desktop app are planned.</p>
       <pre class="term"><span class="p">$</span> stratazip -l 9 -c prices.csv prices.stz
 <span class="p">$</span> stratazip -d prices.stz prices.csv</pre>
     </div>
     <div class="hero-art">
-      <img src="assets/icon-512.png" alt="The StrataZip icon: a zippered S ribbon with rainbow strata and a gold arrow" width="512" height="512">
+      <img src="assets/icon-512.png" srcset="assets/icon-512.png 1x, assets/icon-1024.png 2x" alt="The StrataZip logo: a brushed-silver S of layered strata closed by a gold zip, over the name" width="512" height="512">
     </div>
   </div>
 </section>
@@ -67,19 +74,23 @@
       rerun from the repository on public data.</p>
 
     <div class="stats">
+      <!-- bench:site-tiles -->
       <div class="stat"><div class="n">7.4%</div><div class="t">smaller than zpaq -m5, zpaq's strongest mode, on the Silesia corpus at level 9, and on every one of its twelve files</div></div>
       <div class="stat"><div class="n">12.7%</div><div class="t">smaller than zpaq -m5 on Silesia at the extreme level, the smallest of every tool tested on all twelve files</div></div>
       <div class="stat"><div class="n">26.7%</div><div class="t">smaller than zpaq -m5 on a Bitcoin price history in CSV; 8.9% on bicycle sensor logs</div></div>
       <div class="stat"><div class="n">242</div><div class="t">round trips behind these pages, every one checked byte for byte</div></div>
+      <!-- /bench:site-tiles -->
     </div>
 
     <div class="chart">
+      <!-- bench:site-bars -->
       <h3>Bitcoin price history, 2017 to 2025, CSV (2,575,631 bytes)</h3>
       <p class="note">Compressed size in bytes; shorter is better.</p>
       <div class="bar"><span class="lbl">zstd -19</span><span class="track"><span class="fill" style="width:100.0%; display:block"></span></span><span class="val">200,502</span></div>
       <div class="bar"><span class="lbl">xz -9e</span><span class="track"><span class="fill" style="width:76.7%; display:block"></span></span><span class="val">153,772</span></div>
       <div class="bar"><span class="lbl">zpaq -m5</span><span class="track"><span class="fill" style="width:56.4%; display:block"></span></span><span class="val">113,063</span></div>
       <div class="bar us"><span class="lbl">StrataZip -l 9</span><span class="track"><span class="fill" style="width:41.4%; display:block"></span></span><span class="val">82,925</span></div>
+      <!-- /bench:site-bars -->
     </div>
 
     <div class="two">
@@ -88,11 +99,13 @@
           <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Structured data, text and audio (bytes)</caption>
           <thead><tr><th>Data</th><th>Best other</th><th>StrataZip</th></tr></thead>
           <tbody>
+            <!-- bench:site-struct -->
             <tr><td>Bicycle sensor logs (Bike&amp;Safe)</td><td>11,540,076 <small>zpaq</small></td><td><b>10,516,775</b> <small>-l 9</small></td></tr>
             <tr><td><i>E. coli</i> genome</td><td>1,114,234 <small>zpaq</small></td><td><b>1,099,133</b> <small>-l 9</small></td></tr>
             <tr><td>enwik8, 100 MB of Wikipedia</td><td>19,625,015 <small>zpaq</small></td><td><b>18,700,345</b> <small>-l 10</small></td></tr>
             <tr><td>Field recordings, ten ESC-50 clips</td><td>1,880,800 <small>FLAC</small></td><td><b>1,784,415</b> <small>-l 4</small></td></tr>
             <tr><td>Two pop songs, 30 s each</td><td>6,709,260 <small>FLAC</small></td><td><b>6,274,566</b> <small>-l 4</small></td></tr>
+            <!-- /bench:site-struct -->
           </tbody>
         </table>
       </div>
@@ -101,6 +114,7 @@
           <caption style="text-align:left; font-weight:600; padding:8px 10px; color:var(--ink)">Silesia corpus, 212 MB (MB, smaller is better)</caption>
           <thead><tr><th>Tool</th><th>Size</th><th>Ratio</th></tr></thead>
           <tbody>
+            <!-- bench:site-silesia -->
             <tr class="us"><td>StrataZip -l 10</td><td>34.16</td><td>6.205</td></tr>
             <tr class="us"><td>StrataZip -l 9</td><td>36.23</td><td>5.850</td></tr>
             <tr><td>zpaq -m5</td><td>39.11</td><td>5.419</td></tr>
@@ -109,23 +123,42 @@
             <tr><td>7z -mx=9</td><td>48.76</td><td>4.347</td></tr>
             <tr><td>zstd --ultra -22 --long=27</td><td>52.52</td><td>4.035</td></tr>
             <tr><td>gzip -9</td><td>67.63</td><td>3.134</td></tr>
+            <!-- /bench:site-silesia -->
           </tbody>
         </table>
       </div>
     </div>
 
-    <p class="caveat">The honest part: levels 9 and 10 are slow, and as slow to open as to make,
+    <p class="caveat"><!-- bench:site-honest -->The honest part: levels 9 and 10 are slow, and as slow to open as to make,
       like zpaq and cmix; zpaq -m5 compresses about five times as fast as level 9 and decompresses
       about four times as fast. They are for archives
       you keep. On enwik8 zpaq -m5 beats level 9 by 1.6%; level 10 is the figure above. The research
       compressors cmix and paq8px publish smaller results on these corpora; they were not run here. The
-      Bitcoin file is private and available on request to anyone who wants to check the result.
+      Bitcoin file is private and available on request to anyone who wants to check the result.<!-- /bench:site-honest -->
       Full tables, the machine and every caveat:
       <a href="https://github.com/thomholden/StrataZip/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
   </div>
 </section>
 
-<section id="why">
+<section id="uses">
+  <div class="wrap">
+    <p class="kicker">New in 1.2</p>
+    <h2>An archive you keep working in</h2>
+    <p class="intro">Not only written once: a 1.2 archive can be mounted, synced, locked, signed
+      and searched, and every change is a commit you can go back to. Six jobs it does, each
+      walked through with real output in <a href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md">the guide</a>. Locks and signatures are new in 1.2 and not yet reviewed outside the project; <a href="https://github.com/thomholden/StrataZip/blob/main/SECURITY.md">SECURITY.md</a> says what they protect and what they do not.</p>
+    <div class="uses">
+      <div class="use"><h3>Years of data, small</h3><p>Sensor readings, prices and logs, coded by a model that knows which column each byte sits in. One file comes back out without unpacking the rest.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">-l</span> <span class="t">9</span> <span class="t">-c</span> <span class="t">logs</span> <span class="t">logs.stz</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--get</span> <span class="t">logs.stz</span> <span class="t">day-17.log</span> <span class="t">out.log</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#1-keep-years-of-data-small">See it run &rarr;</a></div>
+      <div class="use"><h3>A backup you can check</h3><p>Recovery records mend a bad sector, a signature shows it is unchanged since you signed it, and every night is a commit you can go back to.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">-r</span> <span class="t">5</span> <span class="t">-c</span> <span class="t">work</span> <span class="t">backup.stz</span> <span class="t">--sign-with</span> <span class="t">me.key</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--sync</span> <span class="t">work</span> <span class="t">backup.stz</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--at</span> <span class="t">2026-11-24T23:00</span> <span class="t">-d</span> <span class="t">backup.stz</span> <span class="t">old</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#2-a-nightly-backup-you-can-trust">See it run &rarr;</a></div>
+      <div class="use"><h3>An archive as a drive</h3><p>Mount it and work in it like any folder. Each change is a commit; a crash costs only what was written since the last one. Lock a folder, even while mounted.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--mount</span> <span class="t">office.stz</span> <span class="t">~/office</span> <span class="t">--rw</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--seal</span> <span class="t">office.stz</span> <span class="t">hr</span> <span class="t">--lock</span> <span class="t">hr</span> <span class="t">-p</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#3-an-archive-you-use-as-a-drive-with-one-folder-locked">See it run &rarr;</a></div>
+      <div class="use"><h3>Two machines in step</h3><p>One archive keeps folders on several machines in step, over ssh if you like. Text edits merge; a real conflict keeps both versions.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--sync</span> <span class="t">~/notes</span> <span class="t">ssh://nas/notes.stz</span> <span class="t">--two-way</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#4-two-machines-one-archive">See it run &rarr;</a></div>
+      <div class="use"><h3>Search without unpacking</h3><p>An index of the words, kept current by every commit. Rank the files without decoding them, or hand a language model the passages that answer.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">-c</span> <span class="t">docs</span> <span class="t">docs.stz</span> <span class="t">--index</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--search</span> <span class="t">"refund policy"</span> <span class="t">docs.stz</span> <span class="t">--passages</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#5-find-things-without-unpacking-them">See it run &rarr;</a></div>
+      <div class="use"><h3>When a disk goes bad</h3><p>Damage is found, never decoded into wrong bytes. With recovery records it is mended; without, every file that can be proved whole is kept.</p><pre class="mini"><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">-v</span> <span class="t">backup.stz</span></span><span class="c"><span class="p">$</span> <span class="t">stratazip</span> <span class="t">--repair</span> <span class="t">backup.stz</span> <span class="t">mended.stz</span></span></pre><a class="more" href="https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md#6-when-a-disk-goes-bad">See it run &rarr;</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="why">
   <div class="wrap">
     <h2>Why it comes out smaller</h2>
     <p class="intro">Nothing is guessed from a file name. Each block goes to whichever coder
@@ -141,7 +174,7 @@
   </div>
 </section>
 
-<section class="alt" id="pricing">
+<section id="pricing">
   <div class="wrap">
     <h2>Commercial licence</h2>
     <p class="intro">Perpetual, with 12 months of updates, the way JetBrains does it. Keep the
@@ -187,7 +220,7 @@
   </div>
 </section>
 
-<section id="install">
+<section class="alt" id="install">
   <div class="wrap">
     <h2>Install</h2>
     <p class="intro">Ubuntu and Kubuntu 24.04 or 26.04: download the <code>.deb</code> from
@@ -204,10 +237,13 @@
 <footer>
   <div class="wrap">
     <div>© 2026 Steven Thomas Holden. StrataZip is free software under the
-      <a href="https://github.com/thomholden/StrataZip/blob/main/LICENSE">AGPL-3.0</a>, with a commercial licence available.</div>
+      <a href="https://github.com/thomholden/StrataZip/blob/main/LICENSE">AGPL-3.0</a>, with a commercial licence available.
+      The StrataZip name and logo are trademarks of Steven Thomas Holden
+      (<a href="https://github.com/thomholden/StrataZip#the-logo">how to use them</a>).</div>
     <nav aria-label="Footer">
       <a href="https://github.com/thomholden/StrataZip">GitHub</a>
       <a href="https://github.com/thomholden/StrataZip/blob/main/SECURITY.md">Security</a>
+      <a href="assets/stratazip.svg">Logo (SVG)</a>
       <a href="mailto:hello@stratazip.com">hello@stratazip.com</a>
     </nav>
   </div>

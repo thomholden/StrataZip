@@ -1,0 +1,296 @@
+.\" The StrataZip manual page, written by packaging/man.py from the program's --help.
+.TH STRATAZIP 1 "" "StrataZip 1.2.0" "User Commands"
+.SH NAME
+stratazip \- measured compression, living archives, traceable data
+.SH SYNOPSIS
+.B stratazip
+[\fB\-l\fR \fI1\-10\fR] [\fIoptions\fR] \fImode\fR \fIarguments\fR
+.SH DESCRIPTION
+StrataZip is an archiver. Each block of your data is tried against several coders, and the one that measures smallest on that block is kept: context mixing for text, code and tables, a picture coder for 16\-bit images, a waveform coder for 16\-bit audio, a two\-bit coder for DNA, LZ for the rest. Every block is checked by a CRC\-32 and every file by its SHA\-256 on the way out.
+.PP
+A folder archive keeps living after it is made: it can be mounted as a drive, synced with one or several folders, locked and signed, indexed and searched. Every change is a commit appended to the archive, which can be read as it stood after any of them, and a crash costs only what was written since the last one. With recovery records (\-r) a damaged archive is mended; without them, damage is found and reported, never decoded into wrong bytes.
+.SH OPTIONS
+This is the program's own \-\-help, in full.
+.PP
+.nf
+.ft CR
+usage: stratazip [\-l 1\-10] [\-e] [\-F] [\-b KiB] [\-j threads] [\-r percent] [\-q] <mode>
+  \-c, \-\-compress    <in> <out>   "\-" for stdin or stdout; <in> may be a directory
+      \-\-from        <arc>        with a directory: the archive it replaces, for speed
+      \-\-exclude <glob>, \-\-exclude\-from <file>   with a directory: leave out what matches a
+                                 name or a path (a folder and all under it), as \-\-sync does
+      \-\-no\-owners                no owners written (also \-\-sync, \-\-compact)
+      \-\-ref <archive>            an archive this one is built on (repeatable: a collection),
+                                 named in it by its content fingerprint
+      \-\-fingerprint <archive>    the content fingerprint a \-\-ref names an archive by
+      \-\-resolve\-refs <archive>   compact an archive built on references into one that needs none
+      \-\-embed\-refs <archive>     carry the reference files its blocks read inside it (every saving kept)
+      \-\-shards <n>               with a directory: n shard archives (<out>.s1.stz ...) of about
+                                 equal bytes, and <out> a catalog routing each path to its shard
+      \-\-add\-shard <catalog> <archive>...   archives added to a catalog (made if missing), or
+                                 refreshed when listed; each has its own writer, newest wins
+      \-\-shard\-dir <dir>          where shards are looked for when not beside the catalog
+      \-\-group\-alike              near\-copies of dense files (images, archives, noise) kept
+                                 together across the whole tree, so they are coded as one
+                                 (to be the default at levels 7 to 10; \-\-no\-group\-alike: never)
+      \-\-read\-back                the new archive read back and checked before it takes its
+                                 name (also \-\-compact, \-\-repair, \-\-salvage): on a failure the
+                                 old one stands and the command says why
+  \-d, \-\-decompress  <in> <out> [path...]   a directory archive into the directory <out>;
+                                 with paths, only those files and folders
+      \-\-list        <in>         the members of a directory archive
+      \-\-get         <in> <path> <out>   one member of a directory archive; a folder is
+                                 written as the directory <out>
+      \-\-log         <in> [path]  every commit the archive holds: its number, time, what it
+                                 added (+), changed (~) and deleted (\-), its bytes, whether a
+                                 signature reaches it, the replica that made it; with a path,
+                                 the commits that touched it or anything under it; \-\-json.
+                                 After a compaction the history starts again (it says so)
+      \-\-at <commit|time>         with \-\-list, \-d, \-\-get, \-\-sums, \-\-diff, \-\-info and \-\-mount:
+                                 the archive as it stood after that commit (0 the base; now;
+                                 a time, 2026\-11\-18T23:15 local or with Z, or @<seconds>: the
+                                 last commit at or before it). \-\-diff takes it twice: the old
+                                 side's, then the new side's (one: what changed since). A mount
+                                 at a commit is read\-only
+      \-\-info        <in>...      what an archive is made of, without decoding it: its
+                                 coders, properties and feature bits, its state (whole, a
+                                 torn tail, needs \-\-repair, damaged), the journal, the locks,
+                                 how far the signatures reach, the attic, the replicas and
+                                 the search index; with \-\-json, all of it as JSON, and a
+                                 directory's members with their sizes, times and SHA\-256s
+  \-v, \-\-verify      <in>...      decode and check, writing nothing; exit 0 OK, 3 NEEDS REPAIR
+                                 (nothing lost: damage the recovery records mend is mended in
+                                 memory and read through; \-\-repair writes it back), 1 FAIL
+      \-\-quick                    \-v without decoding: every record framed, every CRC no decoder
+                                 is needed for, the base's digest, each commit's SHA\-256, each
+                                 recovery record's shards; says what it did not check. With
+                                 \-\-pubkey <key> (after \-v), the signatures too. DAMAGED where
+                                 only a decoder can say whether a file is lost (exit 1)
+  \-x, \-\-repair      <in> <out>   repair a copy from the recovery records (and commit records
+                                 from their copies)
+      \-\-salvage     <in> <out>   a new archive of every file that can still be read from a
+                                 damaged one, and a list of what was lost
+  locks and signatures (the seal):
+      \-\-keygen <name> [\-\-paper] [\-\-restore <file>]   a key set: <name>.key and <name>.pub
+      \-\-seal <in> <path>... \-\-lock <name>   seal files or folders (\-p, \-\-to for a new lock)
+      \-\-unseal <in> <path>...      open them back (\-p or \-\-key)
+      \-\-relock <in> \-\-lock <name>  add a way in (\-\-add\-password, \-\-to), or remove one
+                                 (\-\-remove\-password, \-\-remove\-pwfile <f>, \-\-remove\-key <id>);
+                                 removing a way in is not revocation (who had it may have kept
+                                 the key): \-\-rotate is
+      \-\-rotate <in> \-\-lock <name>  a new key (its ways: \-\-add\-password, \-\-to)
+      \-\-locks <in>                 the locks, their ways in and sizes
+      \-\-sign <key> <in>; \-\-verify\-sig <pub> <in> (says how far the signatures reach)
+      \-\-sign\-with <key>            a command signs once, after its last commit; the drive
+                                 at unmount, when a lock is shut, and every \-\-sign\-every s
+                                 (300; 0: every commit). Ed25519ph and ML\-DSA\-65; verifying
+                                 needs both, and so an hcy4pub key: \-\-pubkey <key>
+      \-\-sign\-pwfile <f>            the signing key's password from a file of its own (\-\-pwfile
+                                 is then the lock's or \-\-key's; with \-\-sign\-with alone it is the key's)
+      \-\-pad                        a new lock padded: sealed lengths say little (at most 12% more)
+    on a mounted archive (its control socket):
+      \-\-unlock <mountpoint> <lock> (\-p or \-\-key); \-\-lock <mountpoint> <lock>
+      \-\-seal <path>... \-\-lock <name>, \-\-unseal <path>..., \-\-seal\-dir <path> \-\-lock <name>
+      \-c <dir> <out> \-p | \-\-to <pub>   a whole tree sealed
+      \-p, \-\-pwfile <f>, \-\-key <f>, \-\-to <pub>, \-\-kdf <cost>, \-\-expect\-commit <n>
+  \-k, \-\-check       <in>...      round trip in memory, report ratio and speed
+      \-\-mount       <in> <dir>   serve a directory archive as a drive (Linux), until
+                                 \-\-umount <dir> or Ctrl\-C; read\-only unless \-\-rw (a one\-stream
+                                 archive does not mount: archive a folder)
+      \-\-umount      <dir>        end a mount
+      \-\-compact     <in>         fold the journal a writable mount appended into a new
+                                 archive at the archive's own level (or \-l), unchanged
+                                 segments copied still compressed; replaces it by one
+                                 rename, so a crash leaves the old or the new
+      \-\-sums        <in>         every file's SHA\-256 as sha256sum writes it, from the
+                                 archive's index, decoding nothing: for sha256sum \-c
+      \-\-diff        <a> <b>      what changed from a to b, each an archive or a folder,
+                                 without unpacking: A added, D removed, M changed, T another
+                                 kind, P permissions only; by size and time as the quick
+                                 check, or with \-\-hash by SHA\-256; exit 0 the same, 1 not
+      \-\-analyze     <path>       what the analysis sees in a file (or each file of a
+                                 folder) and the coder each level takes; \-\-estimate adds
+                                 sizes at levels 4, 5 and 9 from samples; \-\-json for tools;
+                                 "cut as" is the kind a file is given in a folder (text,
+                                 table, picture, audio, DNA, code, binary, compressed or
+                                 stored by signature); "shares blocks with" names the files
+                                 it would share a block with at the level given (\-l)
+  sync:
+      \-\-sync <dir> <arc>         the folder into the archive: one commit of what changed (the
+                                 quick check, then the hash); a missing archive is made
+        \-\-two\-way                both ways through the archive, which remembers what each
+                                 folder last agreed to (nothing is written in the folder but
+                                 its files); one change propagates, the same change
+                                 converges, texts merge (diff3), other conflicts keep both;
+                                 \-\-replica <name> names the folder (else machine and path)
+        \-\-confirm\-deletions      allow a sync that deletes more than half of the tree's files
+        <arc> = ssh://[user@]host[:port]/path   remote: only the archive's tail crosses
+        \-n (the plan only), \-\-compact, \-\-exclude <glob>, \-\-prefer newer|local|archive,
+        \-\-no\-merge, \-\-fsync, \-\-patch\-min MiB (default 1), \-\-plain\-ok, \-\-ssh <cmd>,
+        \-\-remote\-cmd <prog>, \-p/\-\-key (open locks), \-\-sign\-with <key>
+      \-\-watch <dir> <arc>        \-\-sync on every change, at most every \-\-commit\-interval s
+                                 (default 30); \-\-compact\-every 7d; \-\-two\-way; \-\-unit: a
+                                 systemd user unit for it
+      \-\-merge <a> <b>            b's changes since their common commit fused into a
+      \-\-serve <arc>              the far side of a remote sync (stdin and stdout)
+      \-\-compact \-\-replica\-age <days>   a folder not synced for that long is forgotten (180)
+      \-\-compact \-\-forget\-replicas      every folder forgotten: an archive to give away
+  search:
+      \-c <dir> <out> \-\-index     index the text files as it archives (every commit after keeps
+                                 the index current; compaction writes it again)
+      \-\-index <arc>              index an archive, or bring its index up to date
+      \-\-search "words" <arc>     the files that match, ranked by BM25, nothing decoded;
+                                 \-\-top <n> (default 20), \-\-json, \-\-snippets (each hit's best
+                                 line, decoded), \-p/\-\-key (sealed files of open locks too)
+        \-\-passages               passages for a language model instead of files: the best
+                                 files' text cut into paragraphs, ranked (BM25 and the embedding)
+                                 and spread (MMR: a passage like one chosen gives way); \-\-top <n>
+                                 passages (10), \-\-files <n> read (20), \-\-budget <words>, \-\-json
+                                 (each with its path, bytes, lines, scores and text)
+      \-\-similar <path> <arc>     the files most like that one (by a hashed embedding of words)
+      \-\-test                     self\-test, quick (seconds): the golden archives, round trips,
+                                 the ciphers' known answers, damage found and mended
+      \-\-test=medium              more (minutes): damage at every byte of small archives,
+                                 crash loops, locks and signatures
+  \-t, \-\-test=full                all of it (about an hour; what each build is checked with);
+                                 what needs a mount or more is said and skipped if unavailable
+options:
+  \-l 1\-10                        level (default 4): 1 to 3 fast both ways; 4 about xz \-6's
+                                 size, slower to make, as fast to open; 5 and 6 smaller on
+                                 text and tables, slower to open; 7 for strength, 9 for the
+                                 smallest file at a practical pace
+  \-e, \-\-extreme                  level 10: every resource for the last bits; tables sized to
+                                 the free memory (at most 75% of it); decoding needs the same
+                                 memory per thread, and fewer threads if memory is short
+  \-F, \-\-compress\-all             code everything, even data as dense as noise
+      \-\-same\-owner               with \-d: owners (by name, else number) and hard links given
+                                 back, as root always
+      \-\-format 9                 StrataZip 1.1's format (levels 1 to 3), for an archive that
+                                 must go to a 1.1: no properties, journal, locks or sync
+                                 (archives, encrypted data), which levels 1 to 9 store as it is
+  \-b KiB                         block size (default 4096; 16384 at level 4; 65536 at
+                                 levels 5 and 6; 8192 at level 9; 262144 at level 10)
+  \-j threads                     worker threads (default all)
+  \-r percent                     recovery record, 0 to 100 (default 0): with one, \-\-repair mends
+                                 a damaged byte to the original; without, damage is found and
+                                 said, no writer touches the archive, \-\-salvage keeps the rest
+  \-q, \-\-quiet                    no report after compressing
+mount options:
+  \-\-rw                           writable: changes go into a journal appended to the archive,
+                                 committed on fsync, every \-\-commit\-interval seconds and at
+                                 unmount; a crash costs only what was written since
+  \-\-commit\-interval s            default 5; 0 commits only on fsync, 256 MiB staged, unmount
+  \-\-fast\-fsync                   an fsync commits its file alone; a patch's SHA\-256 is left
+                                 pending until the next whole commit (the archive gets the
+                                 must\-read bit "pending hashes" until \-\-compact)
+  \-\-allow\-other, \-\-no\-allow\-other  other users may enter, their permissions checked against
+                                 the owners kept (on as root; otherwise needs user_allow_other)
+  \-\-journal\-level 1\-9            the level changes are coded at (default 4)
+  \-\-compact\-on\-unmount           compact the archive when the mount ends (as \-\-compact)
+  \-\-cache MiB                    decoded blocks kept (default a quarter of free memory, at most 1 GiB)
+  \-v, \-\-verify                   check a file's SHA\-256 before serving any of it
+exit status:
+  0 done; 1 failed, or nothing found (\-\-search, \-\-diff, \-\-salvage that lost a file), or a
+  \-\-two\-way sync that kept a conflict; 2 not done (an error or a refusal; the archive unchanged);
+  3 done, but the archive needs \-\-repair: its journal is damaged (the commits after the damage
+  are out of reach, and what was read is the tree before it), or a commit, the properties or a
+  record header was read from its copy
+.ft R
+.fi
+.SH EXAMPLES
+.PP
+Compress a table at level 9, and get it back:
+.PP
+.RS 4
+.nf
+stratazip \-l 9 \-c prices.csv prices.stz
+stratazip \-d prices.stz prices.csv
+.fi
+.RE
+.PP
+Archive a folder with 5% recovery records and a signature, then add each night's changes:
+.PP
+.RS 4
+.nf
+stratazip \-r 5 \-c project backup.stz \-\-sign\-with me.key
+stratazip \-\-sync project backup.stz \-\-sign\-with me.key
+.fi
+.RE
+.PP
+Take one file back as it stood at a given time:
+.PP
+.RS 4
+.nf
+stratazip \-\-at 2026\-11\-24T23:00 \-\-get backup.stz plan.txt plan.txt
+.fi
+.RE
+.PP
+Mount a folder archive as a writable drive, and unmount it:
+.PP
+.RS 4
+.nf
+stratazip \-\-mount office.stz ~/office \-\-rw
+stratazip \-\-umount ~/office
+.fi
+.RE
+.PP
+Keep two folders in step through one archive, the second over ssh:
+.PP
+.RS 4
+.nf
+stratazip \-\-sync ~/notes notes.stz \-\-two\-way
+stratazip \-\-sync ~/notes ssh://nas/notes.stz \-\-two\-way
+.fi
+.RE
+.PP
+Index an archive as it is made, and search it:
+.PP
+.RS 4
+.nf
+stratazip \-c docs docs.stz \-\-index
+stratazip \-\-search "refund policy" docs.stz \-\-snippets
+.fi
+.RE
+.PP
+Check an archive, and mend a damaged one into a new copy:
+.PP
+.RS 4
+.nf
+stratazip \-v backup.stz
+stratazip \-\-repair backup.stz mended.stz
+.fi
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Done.
+.TP
+.B 1
+Failed, or nothing found (\-\-search, \-\-diff, a \-\-salvage that lost a file), or a \-\-two\-way sync that kept a conflict.
+.TP
+.B 2
+Not done: an error or a refusal. The archive is unchanged.
+.TP
+.B 3
+Done, but the archive needs \-\-repair.
+.SH SEE ALSO
+.PP
+The guide: six jobs walked through, with their real output.
+.br
+\%https://github.com/thomholden/StrataZip/blob/main/docs/GUIDE.md
+.PP
+The format, byte by byte.
+.br
+\%https://github.com/thomholden/StrataZip/blob/main/docs/FORMAT.md
+.PP
+What a lock and a signature protect, and what they do not.
+.br
+\%https://github.com/thomholden/StrataZip/blob/main/SECURITY.md
+.PP
+The project.
+.br
+\%https://stratazip.com
+.SH AUTHOR
+Steven Thomas Holden.
+.SH COPYRIGHT
+Copyright (C) 2026 Steven Thomas Holden. StrataZip is free software under the GNU Affero General Public License, version 3; a commercial licence is also available. The StrataZip name and logo are trademarks of Steven Thomas Holden.

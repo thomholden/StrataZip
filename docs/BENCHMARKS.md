@@ -7,16 +7,20 @@ marked. Speeds are wall-clock on a shared two-core cloud machine and are only go
 comparing tools with each other; your machine will be faster. Every table is built by a
 script from the raw results, with no figure typed by hand.
 
+<!-- bench:meta -->
 **Machine:** Intel Xeon @ 2.10 GHz, 2 cores, Ubuntu 24.04, 28 October 2026. **Tools:**
 gzip 1.12, bzip2 1.0.8, zstd 1.5.5, brotli 1.1.0, xz 5.4.5, 7-Zip 23.01, bzip3 1.4.0,
 zpaq 7.15, FLAC 1.4.3. StrataZip 1.1.0, built with GCC 13.3 and Qt 6.4.2. Every tool,
 StrataZip included, was run on the same machine for these tables.
+<!-- /bench:meta -->
 
+<!-- bench:standing -->
 **Where StrataZip stands.** Among practical archivers, its levels 9 and 10 make the
 smallest Silesia archives of every tool here. The research compressors at the top of
 the Hutter Prize and the Large Text Compression Benchmark, cmix and paq8px, publish
 smaller results on these corpora; they were not run here.
 Levels 9 and 10 are slow, and decode as slowly as they encode.
+<!-- /bench:standing -->
 
 ## The Silesia corpus
 
@@ -24,12 +28,19 @@ The standard corpus of mixed real data: text, a database, executables, XML, medi
 images, an astronomical catalogue. 12 files, 211,938,580 bytes. Reproduce with:
 
 ```
-bench/run.sh build/stratazip
-python3 bench/table.py bench/results.txt
+bench/run.sh build/stratazip silesia
+python3 bench/table.py bench/results/silesia.txt
 ```
+
+The other public tables are sets of the same script: `classic`, `folders`, `audio` and
+`enwik9` (`bench/run.sh build/stratazip classic folders audio`). `bench/tools.sh` builds
+paq8px, bsc and kanzi at pinned versions; paq8px runs only with `BENCH_STRONG=1`. `bench/meta.sh`
+records the machine and the tools' versions, and `python3 bench/pages.py bench/results` writes every
+table and every figure on these pages, the README and the site from the results.
 
 ### Totals
 
+<!-- bench:silesia -->
 | Tool | Size (MB) | Ratio | Compress (MB/s) | Decompress (MB/s) |
 |---|---:|---:|---:|---:|
 | gzip -9 | 67.63 | 3.134 | 9.45 | 133.11 |
@@ -62,9 +73,11 @@ python3 bench/table.py bench/results.txt
 | webster | 12,061,624 | 8,644,714 | 8,695,270 | 8,458,469 | 8,428,575 | 8,368,672 | 8,388,852 | 6,787,036 | 10,730,047 | 9,811,472 | 5,666,837 | 5,567,139 | **5,242,959** |
 | x-ray | 6,037,713 | 4,051,112 | 5,155,753 | 5,155,752 | 4,682,753 | 4,491,264 | 4,479,871 | 3,657,090 | 3,535,616 | 3,535,616 | 3,669,704 | 3,535,616 | **3,534,144** |
 | xml | 662,284 | 441,186 | 454,864 | 453,173 | 430,566 | 434,892 | 455,003 | 405,877 | 563,845 | 507,197 | 326,947 | 287,241 | **284,594** |
+<!-- /bench:silesia -->
 
 ### Reading it
 
+<!-- bench:silesia-reading -->
 - **Level 10** is the smallest of every tool on 12 of the 12 files, and 12.7% under
   zpaq -m5 on the corpus (34.16 MB against 39.11). It codes 64 MiB blocks with the
   largest tables that fit in 75% of the free memory, so a large file is seen nearly whole;
@@ -80,6 +93,7 @@ python3 bench/table.py bench/results.txt
   7 MB/s.
 - **Levels 4 and 6** decode the corpus at about 61 MB/s. Level 6 is smaller than
   zstd -19 on the corpus; both are the part of StrataZip with the most room to grow.
+<!-- /bench:silesia-reading -->
 
 ## Structured data
 
@@ -88,12 +102,14 @@ and price, as CSV and as pairs of float64. The file is private, so this row cann
 rerun from the repository; it is available on request to anyone who wants to check the
 result.
 
+<!-- bench:structured -->
 | | Size | xz -9e | zstd -19 | 7z -mx=9 | bzip3 | zpaq -m5 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | CSV | 2,575,631 | 153,772 | 200,502 | 151,299 | 223,469 | 113,063 | 82,925 | **82,818** |
 | float64 | 1,460,048 | 155,144 | 243,722 | 150,829 | 292,702 | 110,793 | 86,537 | **86,515** |
 
 Level 9 is 26.7% under zpaq -m5 on the CSV and 46.1% under xz -9e.
+<!-- /bench:structured -->
 
 ## Sensor logs
 
@@ -101,11 +117,15 @@ The [Bike&Safe dataset](https://data.mendeley.com/datasets/3j9yh8znj4/3) (CC BY 
 GPS, accelerometer, gyroscope and magnetometer logs from bicycle rides, 36 CSV files with
 the dataset's three route photographs and README, as one tar of 47,544,320 bytes.
 
+<!-- bench:sensor -->
 | | xz -9e | zstd -19 | 7z -mx=9 | bzip3 | zpaq -m5 | StrataZip -l 4 | StrataZip -l 6 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Bike&Safe | 15,109,452 | 15,663,947 | 15,108,817 | 14,795,946 | 11,540,076 | 17,607,936 | 16,427,832 | 10,516,775 | **10,222,204** |
 
-Level 9 is 8.9% under zpaq -m5 here. StrataZip 1.0, measured on a tar of the CSV files alone,
+Level 9 is 8.9% under zpaq -m5 here.
+<!-- /bench:sensor -->
+
+StrataZip 1.0, measured on a tar of the CSV files alone,
 was 6% above zpaq -m5 on it: the
 new line and field model knows where each byte stands in its line and field, and what
 stood there in the line above.
@@ -117,6 +137,7 @@ much. Data as dense as noise (zip, xz, encrypted data) is stored as it is at lev
 9 without spending time on it; JPEG keeps a little structure, so it is still coded.
 Six JPEG photographs (35,850,240 bytes as a tar) and one phone video (40,261,434 bytes):
 
+<!-- bench:compressed -->
 | | xz -9e | zstd -19 | 7z -mx=9 | bzip3 | zpaq -m5 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Photos | 35,688,556 | 35,655,541 | 35,681,732 | 35,639,537 | 35,109,662 | 35,010,009 | **35,003,722** |
@@ -126,16 +147,19 @@ On the photos level 9 takes about 5 minutes for a 2.3% gain over the original, 0
 under zpaq -m5. At level 9 the video is stored, the original plus 169 bytes of headers; level 10
 codes it and comes out 52 bytes over the original. zstd, xz and 7-Zip gain 3,744 to
 5,312 bytes on it, about 0.01%.
+<!-- /bench:compressed -->
 
 ## DNA
 
 The *E. coli* genome from the Canterbury large corpus, 4,638,690 bases.
 
+<!-- bench:dna -->
 | | xz -9e | zstd -19 | 7z -mx=9 | bzip3 | zpaq -m5 | StrataZip -l 4 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | E. coli | 1,186,180 | 1,148,133 | 1,185,051 | 1,125,333 | 1,114,234 | 1,300,590 | 1,099,133 | **1,096,355** |
 
 Level 9 codes it at 1.896 bits a base.
+<!-- /bench:dna -->
 
 ## Audio
 
@@ -143,6 +167,7 @@ Level 9 codes it at 1.896 bits a base.
 strongest preset, -8. FLAC drops the WAV files' metadata chunk, so its round trip was
 checked on the samples; StrataZip's on every byte.
 
+<!-- bench:audio -->
 | | Size | FLAC -8 | StrataZip -l 4 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|
 | Ten ESC-50 field recordings, 5 s each, mono, joined | 4,410,078 | 1,880,800 | 1,784,415 | 1,784,415 | **1,784,337** |
@@ -150,6 +175,7 @@ checked on the samples; StrataZip's on every byte.
 | Pop song, 30 s, stereo, 44.1 kHz (decoded from MP3) | 5,292,184 | 3,095,882 | 2,874,306 | 2,874,306 | **2,851,072** |
 
 Against FLAC -8, level 4: −5.1%, −5.9%, −7.2%.
+<!-- /bench:audio -->
 
 The ESC-50 clips (CC BY-NC) are `1-100032-A-0`, `1-100038-A-14`, `1-100210-A-36`,
 `1-101296-A-19`, `1-101336-A-30`, `1-101404-A-34`, `1-103298-A-9`, `1-104089-A-22`,
@@ -166,6 +192,7 @@ The Calgary and Canterbury corpora (each as one tar), the Canterbury large corpu
 coli*, the King James Bible, the CIA World Factbook), and enwik8, the first 100 MB of an
 English Wikipedia dump, used by the Hutter Prize and the Large Text Compression Benchmark.
 
+<!-- bench:classic -->
 | | Size | xz -9e | zstd -19 | 7z -mx=9 | bzip3 | zpaq -m5 | StrataZip -l 4 | StrataZip -l 9 | StrataZip -l 10 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Calgary | 3,266,560 | 851,124 | 893,412 | 853,450 | 807,820 | 683,876 | 1,018,860 | 650,664 | **648,591** |
@@ -175,6 +202,24 @@ English Wikipedia dump, used by the Hutter Prize and the Large Text Compression 
 
 On enwik8 zpaq -m5 is 1.6% smaller than level 9; level 10, which sees it in two
 blocks rather than twenty-four, is 4.7% under zpaq -m5.
+<!-- /bench:classic -->
+
+## Folders
+
+A folder against its own files, and a folder of alike files. StrataZip, 7-Zip (solid) and zpaq
+archive the folder as it is; the stream compressors take one tar of it, made the same way on
+every machine. Silesia as one folder; and eight releases of zlib's sources (1.2.8 to 1.3.1)
+side by side, the kind of folder that versions and snapshots make.
+
+<!-- bench:folders -->
+Measured in the next run.
+<!-- /bench:folders -->
+
+## enwik9
+
+<!-- bench:enwik9 -->
+Measured in the next run.
+<!-- /bench:enwik9 -->
 
 ## Caveats
 

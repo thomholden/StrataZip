@@ -6,17 +6,21 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// words.h: the word dictionary, Skibinski's word-replacing transform (WRT). A text's
-// frequent words become 1- or 2-byte codes made of byte values the text never uses; a
-// flag before a code says the word was capitalised, another that it was in capitals. The
-// context-mixing coder then sees shorter text whose words are single symbols.
+// wrd, format 09's word dictionary: Skibinski's word-replacing
+// transform (WRT), after the lab's wrt.py. A text's frequent words become 1- or 2-byte codes
+// made of byte values the text never uses (untouchables, put to work: the codes
+// are the values no byte of the text reaches); a flag before a code says the word was
+// capitalised, another that it was in capitals. The context-mixing coder then sees shorter
+// text whose words are single symbols. A core of its own, for any component that keeps text.
 //
-// The dictionary is made once for a group of blocks and shared by all of them: made per
-// 4 MiB block, each block carried its own copy of nearly the same words, and on dickens
-// the three copies cost more than the transform saved (+0.34%).
+// The dictionary is made once for a group of blocks and shared by all of them (v09): made
+// per 4 MiB block, each block carried its own copy of nearly the same words, and on dickens
+// the three copies cost more than the transform saved (+0.34%; measured 28 October).
 //
-// Abbreviations:  wrd  the word dictionary, and its transform;   cap  the flag for a
-//                 capitalised word;   alc  the flag for a word in capitals
+// TLAs:  wrd  the word dictionary, and its transform;   cap  the flag for a capitalised
+//        word;   alc  the flag for a word in capitals
+//
+// Signed, 28 October 2026.
 
 #ifndef STRATAZIP_WORDS_H
 #define STRATAZIP_WORDS_H
@@ -46,7 +50,7 @@ struct dic {
     std::vector<std::string> wds;
     std::vector<quint8>      fre;                         // free values, 128 to 255, in order
     // The codes, derived from fre: fre[0] the capital flag, fre[1] the capitals flag,
-    // fre[2] unused (an escape, kept free), then one-byte codes, then the lead bytes
+    // fre[2] unused (the lab's escape, kept free), then one-byte codes, then the lead bytes
     // of two-byte codes (second byte: any value).
     int  cap() const { return fre[0]; }
     int  alc() const { return fre[1]; }
@@ -157,7 +161,7 @@ fwd(const dic& d, const quint8* p, size_t n) {
 }
 
 inline bool
-inv(const dic& d, const quint8* p, size_t n, std::vector<quint8>& o, size_t lim) {
+inv(const dic& d, const quint8* p, size_t n, std::vector<quint8>& o, size_t lim, bool part = false) {   // part (v11, prefix reads): a code cut off at the end ends it
     std::array<int, 256> rol{};                           // per byte: 0 literal, 1 capital flag, 2 capitals flag, 3 one-byte code, 4 lead byte
     std::array<int, 256> val{};
     rol[size_t(d.cap())] = 1; rol[size_t(d.alc())] = 2;
@@ -171,10 +175,10 @@ inv(const dic& d, const quint8* p, size_t n, std::vector<quint8>& o, size_t lim)
         int r = rol[b], fl = 0;
         if (r == 0) { o.push_back(b); ++i; if (o.size() > lim) return false; continue; }
         if (r == 5) return false;
-        if (r == 1 || r == 2) { fl = r; if (++i >= n) return false; r = rol[p[i]]; if (r != 3 && r != 4) return false; }
+        if (r == 1 || r == 2) { fl = r; if (++i >= n) return part; r = rol[p[i]]; if (r != 3 && r != 4) return false; }
         size_t k;
         if (r == 3) { k = size_t(val[p[i]]); i += 1; }
-        else { if (i + 1 >= n) return false; k = n1 + size_t(val[p[i]]) * 256 + p[i + 1]; i += 2; }
+        else { if (i + 1 >= n) return part; k = n1 + size_t(val[p[i]]) * 256 + p[i + 1]; i += 2; }
         if (k >= d.wds.size()) return false;
         const std::string& w = d.wds[k];
         for (size_t c = 0; c < w.size(); ++c) {

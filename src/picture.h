@@ -6,27 +6,31 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// picture.h: the picture coder (mode 10), and the analysis that finds a picture in a
-// stream of bytes, for 16-bit greyscale pictures (medical and scientific images, raw
+// pic, format 09's picture coder (mode 10), and the analysis
+// that finds a picture in a stream of bytes: a core of its own, for medimg and any
+// component that meets 16-bit greyscale pictures (medical and scientific images, raw
 // sensor frames, the pixels of 16-bit PGM and TIFF files).
 //
 // How a sample is coded, in raster order. Its neighbours W, N, NW, NE, WW, NN and NNE give
 // twelve predictions (LOCO-I's median, CALIC's gradient-adjusted one with its thresholds
 // scaled to the range, and ten linear ones). Each prediction is weighted by the inverse of
 // its own recent error around this pixel, raised to a power: at a power of 0 every
-// prediction counts the same, and as the power grows the one that has just done best
-// takes over. The power is chosen per block, in quarters from 1/2 to 3/2: noisy pictures
-// want more equality, clean ones more hierarchy (x-ray did best at 1/2, mr at 5/4).
-// CALIC's bias cancellation then corrects the fused prediction by the mean error of its
-// context, and the residual goes through an adaptive Golomb split on the binary
-// arithmetic coder, in contexts of the expected error.
+// prediction counts the same (the egalitarian view), and as the power grows the one that
+// has just done best takes over (the hierarchical view). The power is chosen per block,
+// in quarters from ½ to 3/2: noisy pictures want more equality, clean ones more hierarchy
+// (x-ray did best at ½, mr at 5/4). CALIC's bias cancellation then corrects the fused
+// prediction by the mean error of its context, and the residual goes through an adaptive
+// Golomb split on the binary arithmetic coder, in contexts of the expected error.
 //
 // Integer arithmetic throughout (powers by integer square roots), so the encoder and the
-// decoder agree on every machine.
+// decoder agree on every machine. The reference is the lab's im16.cpp, written by
+// on 27 October 2026; on Silesia's x-ray and mr it codes to 3,533,842 and
+// 1,828,167 bytes, the smallest of every tool measured.
 //
-// Abbreviations:  pic  the picture coder;   geo  a picture's geometry: alignment, byte
-//                 order, width, header;     fus  fusion of the predictions;
-//                 bia  bias cancellation
+// TLAs:  pic  the picture coder;   geo  a picture's geometry: alignment, byte order,
+//        width, header;            fus  fusion of the predictions;   bia  bias cancellation
+//
+// Signed, 28 October 2026.
 
 #ifndef STRATAZIP_PICTURE_H
 #define STRATAZIP_PICTURE_H
@@ -299,7 +303,7 @@ dec(const quint8* p, size_t len, size_t rawlen, std::vector<quint8>& out) {
 }
 
 // The analysis: is d, from its start, a 16-bit greyscale picture, and of what
-// geometry? On a sample from the middle, for each alignment and
+// geometry? As the lab's detect.py: on a sample from the middle, for each alignment and
 // byte order, the mean difference between a sample and the one L back, for every L from 8
 // to 16,384; the width is the smallest L whose cost is within 2% of
 // the least (a picture also dips at twice its width). Proposed when that cost is under half
@@ -325,7 +329,7 @@ ana(const quint8* d, size_t n, bool whl) {
         if (ns < 16384 + 4096) continue;
         std::vector<double> cost(16384 - 8 + 1);
         // On a contiguous run of 32,768 samples after the first 16,384, so the loop runs on
-        // vector instructions (the prototype took every 7th sample of the whole sample).
+        // vector instructions (v09; the prototype took every 7th sample of the whole sample).
         const size_t z0 = 16384, z1 = std::min(ns, z0 + 32768);
         for (int L = 8; L <= 16384; ++L) {
             int s = 0;
@@ -348,7 +352,7 @@ ana(const quint8* d, size_t n, bool whl) {
         std::vector<double> sc = cost; std::nth_element(sc.begin(), sc.begin() + std::ptrdiff_t(sc.size() / 2), sc.end());
         const double mc = sc[sc.size() / 2];
         // Where rows begin: a row's first sample is unlike the last of the row before, so
-        // the jump from the sample before peaks at that column (a tail after the
+        // the jump from the sample before peaks at that column (v09: a tail after the
         // picture, which real files have, no longer shifts the rows).
         long ph = -1;
         double pr = 0;
@@ -364,7 +368,7 @@ ana(const quint8* d, size_t n, bool whl) {
     }
     if (best.wid == 0) return best;
     const bool pic = bcl < 0.5 * bmc || (bm < 0.85 * be1 && bcl < 0.7 * bmc);
-    if (!pic || best.wid < 32) return geo{};            // a row of under 32 samples is a record, not a picture (mozilla's tables read as 9 wide)
+    if (!pic || best.wid < 32) return geo{};            // v09: a row of under 32 samples is a record, not a picture (mozilla's tables read as 9 wide)
     const size_t al = best.hdr, rb = 2 * size_t(best.wid);
     // Where rows begin. When d is the whole input and the picture runs to its end, whole
     // rows reach that end (exact on Silesia's mr, whose rows begin and end in black, so no

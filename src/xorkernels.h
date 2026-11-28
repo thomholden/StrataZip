@@ -6,11 +6,13 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// xorkernels.h: the XOR kernels, the arithmetic of GF(2) and GF(256), where addition
-// is XOR, done the fast way and kept beside the plain way it is checked against.
+// The XOR kernels: the arithmetic of GF(2) and GF(256), where addition is XOR, done the
+// fast way and kept beside the plain way it is checked against. Separated from StrataZip
+// v07 as a core any component can use, as the cryptography library's SHA-256 is: medvid's per-frame
+// CRC and the cryptography library's recovery records are the obvious next users.
 //
-// Over the two values {0, 1}, multiplication is AND and addition is XOR. Both kernels
-// here lean on that:
+// Over the two values {0, 1}, multiplication is AND and addition is XOR
+// Both kernels here lean on that:
 //
 //   - CRC-32 is the remainder of the data, read as a polynomial over GF(2), divided by a
 //     fixed polynomial. Polynomials over GF(2) multiply by AND and add by XOR with no
@@ -21,7 +23,7 @@
 //     so c * b = c * (low half of b) XOR c * (high half), two 16-entry tables that one
 //     SSSE3 shuffle reads sixteen at a time.
 //
-// Plain C++ and the processor's intrinsics; no Qt. Abbreviations:
+// Plain C++ and the processor's intrinsics; no Qt. Definitions:
 //
 //   xor   exclusive or: addition over GF(2) and GF(256)
 //   krn   kernel
@@ -38,7 +40,7 @@
 #include <cstdint>
 
 namespace stratazip {
-namespace xorkernels {
+namespace xorkrn {
 
 // CRC-32 (IEEE 802.3, zlib's), continued from crc (0 to start): by carry-less
 // multiplication where the processor has it, else by tables.
@@ -86,7 +88,7 @@ gf256madtab(
 bool
 clmavl();
 
-} // namespace xorkernels
+} // namespace xorkrn
 } // namespace stratazip
 
 #endif // STRATAZIP_XORKERNELS_H

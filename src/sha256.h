@@ -6,7 +6,11 @@
 // as published by the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY;
 // see the LICENSE file. A commercial licence is also offered: see COMMERCIAL.md.
 //
-// sha256.h: SHA-256 (FIPS 180-4), built in so that StrataZip needs no crypto library.
+// the cryptography library: SHA-256 (FIPS 180-4), joining v02's primitives
+// so that no component needs a library for it. used OpenSSL's libcrypto for one
+// reason, speed: Qt's own SHA-256 ran at 133 MB/s and libcrypto's at 1520 MB/s, by the
+// processor's SHA instructions. This file has those instructions too, and a second fast
+// path for many messages at once, which libcrypto has not.
 //
 // Three kernels for the compression function, all checked against each other and the
 // standard's vectors:
@@ -14,12 +18,13 @@
 //   - scalar: the standard's text, for any processor;
 //   - SHA-NI: the processor's SHA-256 instructions, one message at a time;
 //   - lanes: 8 messages side by side in AVX2, or 16 in AVX-512. Each lane is a message
-//     of its own, at its own length, refilled as soon as it finishes.
+//     of its own, at its own length, refilled as soon as it finishes: the egalitarian
+//     view in silicon, as finmng's mining kernels are, but for messages that differ.
 //
 // The constants are not typed in: they are computed, as the standard defines them, from
 // the square and cube roots of the first primes, in exact integer arithmetic.
 //
-// Plain C++ and the processor's intrinsics; no Qt, no library. Abbreviations:
+// Plain C++ and the processor's intrinsics; no Qt, no library. Definitions:
 //
 //   sha256 SHA-256: the streaming hash (sha256ctx) and one-shot (sha256)
 //   cmp   the compression function, one 64-byte block into the 8-word state
@@ -35,7 +40,7 @@
 #include <cstdint>
 
 namespace stratazip {
-namespace sha {
+namespace cryprm {
 
 using h256 = std::array<std::uint8_t, 32>;
 
@@ -86,7 +91,7 @@ sha256mny(
 
 // Many messages, each continued from a state of its own: st0[i] is the state after pre[i]
 // bytes (a multiple of 64) were absorbed. This is HMAC with its keyed midstates, for many
-// keys at once (PBKDF2, for example).
+// keys at once: scrypt's PBKDF2 for 16 headers in 16 lanes (finmng v03).
 void
 sha256mnyst(
      const std::uint32_t                                        (*st0)[8]
@@ -131,7 +136,7 @@ sha256k();
 const std::uint32_t*
 sha256iv();
 
-} // namespace sha
+} // namespace cryprm
 } // namespace stratazip
 
 #endif // STRATAZIP_SHA256_H

@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1d2124">
   <title>Thank you: StrataZip</title>
   <meta name="robots" content="noindex">
   <!-- Polar adds a short-lived portal login token to this address. Never send it on as a referrer. -->
@@ -12,7 +13,8 @@
     // Take the token out of the address bar, so it is not bookmarked, shared or kept in history.
     if (location.search) { history.replaceState(null, "", location.pathname + location.hash); }
   </script>
-  <link rel="icon" type="image/png" href="../assets/icon-64.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/icon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="../assets/icon-64.png">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>

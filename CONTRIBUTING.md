@@ -21,7 +21,7 @@ Security problems: please follow [SECURITY.md](SECURITY.md) instead of opening a
 1. Open an issue or a discussion first for anything larger than a small fix, so we can
    agree on the approach before you spend time on it.
 2. Keep each pull request to one change. Match the style of the code around it.
-3. Run `stratazip --test` and make sure every check passes. A change to a coder must
+3. Run `stratazip --test=full` (or `-t`) and make sure every check passes. A change to a coder must
    keep every archive written by earlier versions readable: the format is append-only,
    and the self-test holds known-answer archives from each format version.
 4. Say in the description what you measured. For a compression change, the sizes

@@ -15,13 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt 6 and CMake
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j"$(nproc)"
       - name: Self-test
         run: build/stratazip --test
+      - name: The manual page says what --help says
+        run: |
+          python3 packaging/man.py build/stratazip | diff -u docs/stratazip.1 - \
+            || { echo "docs/stratazip.1 is out of date: python3 packaging/man.py build/stratazip > docs/stratazip.1"; exit 1; }
       - name: Package
         run: cd build && cpack -G DEB && cpack -G TGZ
       - uses: actions/upload-artifact@v4
@@ -30,6 +34,68 @@ jobs:
           path: |
             build/*.deb
             build/*.tar.gz
+
+  linux-arm64:
+    # ARM64 decodes the golden set to the same bytes. The self-test
+    # reads every golden archive (made on x86-64) against the digests stored with it, and checks the
+    # rest of the quick tier on a machine with no SSE: the mixers' plain path (src: smd.h), SHA-256's
+    # and the XOR kernels' plain paths. Built and tested only: no ARM64 package is released.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6 and CMake
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo apt-get install -y qt6-base-dev cmake g++
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+      - name: Self-test (the golden archives among it)
+        run: build/stratazip --test
+      - name: An archive made here reads on x86-64 too
+        run: |
+          head -c 3000000 /dev/urandom > r
+          build/stratazip -l 9 -c r r.stz && build/stratazip -v r.stz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stratazip-arm64-made
+          path: |
+            r
+            r.stz
+
+  arm64-to-x86:
+    # The other way: the archive ARM64 made, read by the x86-64 build, to the same bytes.
+    needs: [linux, linux-arm64]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-linux-x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-arm64-made
+      - name: Read it here
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && (sudo apt-get install -y libqt6core6t64 libqt6concurrent6t64 || sudo apt-get install -y libqt6core6 libqt6concurrent6)
+          tar -xzf stratazip-*.tar.gz
+          z=$(find . -path '*/bin/stratazip' -type f | head -1)
+          "$z" -d r.stz r2 && cmp r r2 && echo "ARM64's archive reads on x86-64 to the same bytes"
+
+  drive:
+    # The drive mounted for real (FUSE): written, changed, unmounted and verified, and served read-only;
+    # and an archive read the same at 1, 2 and 4 threads. The .deb built above, installed here.
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: stratazip-linux-x86_64
+      - name: Install the package and FUSE
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./stratazip_*_amd64.deb fuse3
+      - name: The drive and the thread counts
+        run: bash .github/ci/drive.sh stratazip
 
   install-test:
     # The .deb must install and run on every supported release, not only the one it was
@@ -55,7 +121,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, install-test]
+    needs: [linux, install-test, drive]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
